@@ -142,12 +142,26 @@ class TargetingScene:
         self.rect = screen_rect
         self.fonts = fonts
         self.crosshair = [screen_rect.centerx, screen_rect.centery]
-        self.target = [random.randint(240, 1040), random.randint(190, 620)]
+        self.plane = [screen_rect.centerx, 130]
+        self.targets = [self._new_target() for _ in range(4)]
         self.radius = 30
         self.score = 0
         self.scroll = 0
+        self.scroll_speed = 1
+        self.seconds_total = 60
+        self.start_ms = pygame.time.get_ticks()
+        self.game_over = False
+
+    def _new_target(self) -> list[int]:
+        return [random.randint(240, self.rect.width - 240), random.randint(190, self.rect.height - 100)]
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+            self.reset()
+            return
+        if self.game_over:
+            return
+
         if event.type == pygame.MOUSEMOTION:
             self.crosshair[0], self.crosshair[1] = event.pos
         elif event.type == pygame.FINGERMOTION:
@@ -161,25 +175,65 @@ class TargetingScene:
             self._shoot()
 
     def _shoot(self) -> None:
-        dx = self.crosshair[0] - self.target[0]
-        dy = self.crosshair[1] - self.target[1]
-        if dx * dx + dy * dy <= self.radius * self.radius:
-            self.score += 1
-            self.target = [random.randint(240, 1040), random.randint(190, 620)]
+        for i, target in enumerate(self.targets):
+            dx = self.crosshair[0] - target[0]
+            dy = self.crosshair[1] - target[1]
+            if dx * dx + dy * dy <= self.radius * self.radius:
+                self.score += 1
+                self.targets[i] = self._new_target()
+                break
 
     def update(self) -> None:
-        self.scroll = (self.scroll + 2) % 120
+        now = pygame.time.get_ticks()
+        if now - self.start_ms >= self.seconds_total * 1000:
+            self.game_over = True
+            return
+
+        self.scroll = (self.scroll + self.scroll_speed) % 120
+        keys = pygame.key.get_pressed()
+        move_speed = 5
+        if keys[pygame.K_LEFT]:
+            self.plane[0] -= move_speed
+        if keys[pygame.K_RIGHT]:
+            self.plane[0] += move_speed
+        if keys[pygame.K_UP]:
+            self.plane[1] -= move_speed
+        if keys[pygame.K_DOWN]:
+            self.plane[1] += move_speed
+        self.plane[0] = max(30, min(self.rect.width - 30, self.plane[0]))
+        self.plane[1] = max(90, min(self.rect.height - 60, self.plane[1]))
+        self.crosshair[0], self.crosshair[1] = self.plane[0], self.plane[1] + 120
+
+    def reset(self) -> None:
+        self.plane = [self.rect.centerx, 130]
+        self.targets = [self._new_target() for _ in range(4)]
+        self.score = 0
+        self.scroll = 0
+        self.start_ms = pygame.time.get_ticks()
+        self.game_over = False
 
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
         screen.fill((19, 34, 56))
         self._draw_background(screen, assets)
         screen.blit(self.fonts["title"].render("Targeting Drill", True, (240, 240, 240)), (40, 26))
-        screen.blit(self.fonts["small"].render("Track the map, center target, tap/click to lock hit.", True, (225, 225, 225)), (42, 92))
+        screen.blit(self.fonts["small"].render("Arrow keys fly plane • click/tap to drop bombs • R to restart.", True, (225, 225, 225)), (42, 92))
         screen.blit(self.fonts["body"].render(f"Score: {self.score}", True, (255, 242, 130)), (1090, 45))
+        seconds_left = max(0, self.seconds_total - (pygame.time.get_ticks() - self.start_ms) // 1000)
+        screen.blit(self.fonts["body"].render(f"Time: {seconds_left}s", True, (255, 242, 130)), (900, 88))
 
-        pygame.draw.circle(screen, (255, 88, 88), self.target, self.radius)
-        pygame.draw.circle(screen, (255, 255, 255), self.target, self.radius, 3)
+        for target in self.targets:
+            pygame.draw.circle(screen, (255, 88, 88), target, self.radius)
+            pygame.draw.circle(screen, (255, 255, 255), target, self.radius, 3)
+        self._draw_plane(screen)
         self._draw_crosshair(screen)
+        if self.game_over:
+            overlay = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 140))
+            screen.blit(overlay, (0, 0))
+            msg = self.fonts["title"].render("Mission Complete", True, (255, 255, 255))
+            hint = self.fonts["body"].render("Press R to try again", True, (245, 245, 245))
+            screen.blit(msg, msg.get_rect(center=(self.rect.centerx, self.rect.centery - 20)))
+            screen.blit(hint, hint.get_rect(center=(self.rect.centerx, self.rect.centery + 45)))
 
     def _draw_background(self, screen: pygame.Surface, assets: AssetBank) -> None:
         if assets.map_bg:
@@ -200,6 +254,11 @@ class TargetingScene:
         pygame.draw.circle(screen, (255, 255, 255), (x, y), 24, 2)
         pygame.draw.line(screen, (255, 255, 255), (x - 42, y), (x + 42, y), 2)
         pygame.draw.line(screen, (255, 255, 255), (x, y - 42), (x, y + 42), 2)
+
+    def _draw_plane(self, screen: pygame.Surface) -> None:
+        x, y = self.plane
+        pygame.draw.polygon(screen, (235, 235, 235), [(x, y - 20), (x - 22, y + 16), (x + 22, y + 16)])
+        pygame.draw.rect(screen, (200, 200, 200), (x - 34, y + 6, 68, 8), border_radius=4)
 
 
 class KioskApp:
