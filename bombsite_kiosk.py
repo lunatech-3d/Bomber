@@ -21,6 +21,12 @@ PART_DEFS = [
     ("Telescope Eye Piece", (165, 105, 189)),
 ]
 
+PART_SIZE = (165, 46)
+PART_BG_COLOR = (40, 110, 220)
+PART_BORDER_COLOR = (192, 192, 192)
+PART_TEXT_COLOR = (255, 255, 255)
+BOMBSIGHT_IMAGE_SCALE_BOOST = 1.15
+
 RETURN_LERP_SPEED = 0.18
 RETURN_SNAP_DISTANCE = 1.5
 
@@ -74,10 +80,11 @@ class AssemblyScene:
     def _build_parts(self) -> list[Part]:
         parts = []
         sx, sy = 40, 170
+        part_width, part_height = PART_SIZE
 
         for i, (name, color) in enumerate(PART_DEFS):
-            r = pygame.Rect(sx, sy + i * 90, 220, 62)
-            t = pygame.Rect(520 + (i % 2) * 260, 190 + (i // 2) * 130, 220, 62)
+            r = pygame.Rect(sx, sy + i * 90, part_width, part_height)
+            t = pygame.Rect(520 + (i % 2) * 260, 190 + (i // 2) * 130, part_width, part_height)
             parts.append(Part(name=name, color=color, rect=r.copy(), target=t, home=r.topleft))
 
         return parts
@@ -164,6 +171,7 @@ class AssemblyScene:
 
             img = assets.bombsight_photo
             scale = min(panel_rect.width / img.get_width(), panel_rect.height / img.get_height())
+            scale *= BOMBSIGHT_IMAGE_SCALE_BOOST
             new_size = (int(img.get_width() * scale), int(img.get_height() * scale))
             scaled = pygame.transform.smoothscale(img, new_size)
 
@@ -191,10 +199,10 @@ class AssemblyScene:
         alpha = 180 if transparent else 255
         surf = pygame.Surface(part.rect.size, pygame.SRCALPHA)
 
-        pygame.draw.rect(surf, (*part.color, alpha), surf.get_rect(), border_radius=9)
-        pygame.draw.rect(surf, (30, 30, 30, alpha), surf.get_rect(), 2, border_radius=9)
+        pygame.draw.rect(surf, (*PART_BG_COLOR, alpha), surf.get_rect(), border_radius=9)
+        pygame.draw.rect(surf, (*PART_BORDER_COLOR, alpha), surf.get_rect(), 2, border_radius=9)
 
-        label = self.fonts["small"].render(part.name, True, (20, 20, 20))
+        label = self.fonts["small"].render(part.name, True, PART_TEXT_COLOR)
         surf.blit(label, label.get_rect(center=surf.get_rect().center))
 
         screen.blit(surf, part.rect.topleft)
