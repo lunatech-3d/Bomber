@@ -14,11 +14,11 @@ ASSET_DIR = Path(__file__).parent / "assets"
 BOMBSIGHT_IMAGE = Path(r"c:\bomber\football.jpg")
 
 PART_DEFS = [
-    ("Leveling Knob", (239, 196, 76)),
-    ("Turn & Drift Knob", (82, 190, 128)),
-    ("Rate & Displacement Knob", (93, 173, 226)),
-    ("Disc Speed Drum", (236, 112, 99)),
-    ("Eye Piece", (165, 105, 189)),
+    ("Leveling Knob", (239, 196, 76), "Levels the bombsight so calculations stay accurate in flight."),
+    ("Turn & Drift Knob", (82, 190, 128), "Compensates for wind drift and aircraft turn effects."),
+    ("Rate & Displacement Knob", (93, 173, 226), "Adjusts target movement rate and displacement corrections."),
+    ("Disc Speed Drum", (236, 112, 99), "Sets bombing disc speed values used by the aiming mechanism."),
+    ("Eye Piece", (165, 105, 189), "Viewing lens used to align and track the target area."),
 ]
 
 PART_SIZE = (165, 46)
@@ -30,6 +30,13 @@ BOMBSIGHT_IMAGE_SCALE_BOOST = 1.15
 HOME_START = (40, 170)
 HOME_Y_STEP = 90
 TARGET_SLOTS = [(488, 490), (971, 630), (1044, 479), (998, 556), (816, 121)]
+TARGET_LINES = [
+    ((205, 193), (602, 213)),
+    ((205, 283), (862, 213)),
+    ((205, 373), (602, 343)),
+    ((205, 463), (862, 343)),
+    ((205, 553), (602, 473)),
+]
 
 RETURN_LERP_SPEED = 0.18
 RETURN_SNAP_DISTANCE = 1.5
@@ -42,6 +49,7 @@ class Part:
     rect: pygame.Rect
     target: pygame.Rect
     home: tuple[int, int]
+    definition: str
     locked: bool = False
     returning: bool = False
     return_pos: tuple[float, float] | None = None
@@ -86,11 +94,14 @@ class AssemblyScene:
         sx, sy = HOME_START        
         part_width, part_height = PART_SIZE
 
-        for i, (name, color) in enumerate(PART_DEFS):
+        self.start_button = pygame.Rect(980, 650, 250, 48)
+        self.show_start_button = False
+        self.current_definition = "Place a label on the correct slot to see its definition."
+        for i, (name, color, definition) in enumerate(PART_DEFS):
             r = pygame.Rect(sx, sy + i * HOME_Y_STEP, part_width, part_height)
             target_x, target_y = TARGET_SLOTS[i]
             t = pygame.Rect(target_x, target_y, part_width, part_height)
-            parts.append(Part(name=name, color=color, rect=r.copy(), target=t, home=r.topleft))
+            parts.append(Part(name=name, color=color, rect=r.copy(), target=t, home=r.topleft, definition=definition))
 
         return parts
 
@@ -115,6 +126,7 @@ class AssemblyScene:
             if part.rect.colliderect(part.target.inflate(24, 24)):
                 part.rect.topleft = part.target.topleft
                 part.locked = True
+                self.current_definition = part.definition
                 part.returning = False
                 part.return_pos = None
             else:
@@ -147,6 +159,12 @@ class AssemblyScene:
     def completed(self) -> bool:
         return all(p.locked for p in self.parts)
 
+    def ready_to_start(self) -> bool:
+        return self.completed()
+
+    def handle_start_click(self, pos: tuple[int, int]) -> bool:
+        return self.ready_to_start() and self.start_button.collidepoint(pos)
+
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
         screen.fill((224, 219, 205))
 
@@ -165,7 +183,7 @@ class AssemblyScene:
                 True,
                 (42, 42, 42),
             ),
-            (40, 660),
+            (40, 610),
         )
 
         panel_rect = pygame.Rect(470, 130, 760, 520)
@@ -194,12 +212,22 @@ class AssemblyScene:
             pygame.draw.rect(screen, (186, 176, 155), panel_rect, border_radius=20)
             pygame.draw.rect(screen, (95, 87, 71), panel_rect, 3, border_radius=20)
 
-        for part in self.parts:
+        for i, part in enumerate(self.parts):
+            if i < len(TARGET_LINES):
+                pygame.draw.line(screen, (72, 72, 72), TARGET_LINES[i][0], TARGET_LINES[i][1], 3)
             pygame.draw.rect(screen, (110, 110, 110), part.target, 2, border_radius=10)
+        self._draw_definition_box(screen)
+        self.show_start_button = self.completed()
+        if self.show_start_button:
+            pygame.draw.rect(screen, (40, 130, 75), self.start_button, border_radius=8)
+            pygame.draw.rect(screen, (230, 230, 230), self.start_button, 2, border_radius=8)
+            txt = self.fonts["small"].render("Start Simulation", True, (255, 255, 255))
+            screen.blit(txt, txt.get_rect(center=self.start_button.center))
 
-            if not part.locked:
-                hint = self.fonts["small"].render(part.name, True, (92, 92, 92))
-                screen.blit(hint, (part.target.x + 8, part.target.y + 18))
+        mouse = pygame.mouse.get_pos()
+        for part in self.parts:
+            if part.locked and part.target.collidepoint(mouse):
+                self.current_definition = part.definition
 
         for part in self.parts:
             self._draw_part(screen, part, transparent=(part is self.dragging and not part.locked))
@@ -215,6 +243,13 @@ class AssemblyScene:
         surf.blit(label, label.get_rect(center=surf.get_rect().center))
 
         screen.blit(surf, part.rect.topleft)
+
+    def _draw_definition_box(self, screen: pygame.Surface) -> None:
+        rect = pygame.Rect(40, 645, 920, 64)
+        pygame.draw.rect(screen, (246, 241, 226), rect, border_radius=10)
+        pygame.draw.rect(screen, (95, 87, 71), rect, 2, border_radius=10)
+        label = self.fonts["small"].render(self.current_definition, True, (30, 30, 30))
+        screen.blit(label, (rect.x + 12, rect.y + 20))
 
 
 class TargetingScene:
@@ -328,14 +363,17 @@ class KioskApp:
 
                 if self.scene == "assembly":
                     self.assembly.handle_event(event)
+                    if (
+                        event.type == pygame.MOUSEBUTTONDOWN
+                        and event.button == 1
+                        and self.assembly.handle_start_click(event.pos)
+                    ):
+                        self.scene = "targeting"
                 else:
                     self.targeting.handle_event(event)
 
             if self.scene == "assembly":
                 self.assembly.update()
-
-                if self.assembly.completed():
-                    self.scene = "targeting"
 
             elif self.scene == "targeting":
                 self.targeting.update()

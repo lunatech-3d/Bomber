@@ -15,6 +15,7 @@ from bombsite_kiosk import (
     PART_DEFS,
     PART_SIZE,
     TARGET_SLOTS,
+    TARGET_LINES,
     TITLE,
     AssetBank,
 )
@@ -39,6 +40,8 @@ class LabelEditor:
         self.targets = [
             pygame.Rect(slot[0], slot[1], PART_SIZE[0], PART_SIZE[1]) for slot in TARGET_SLOTS
         ]
+        self.lines = [[list(start), list(end)] for start, end in TARGET_LINES]
+        self.dragging_line: tuple[int, int] | None = None
 
     def run(self) -> None:
         clock = pygame.time.Clock()
@@ -54,11 +57,15 @@ class LabelEditor:
                     elif event.key == pygame.K_s:
                         self.print_targets()
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    self.start_drag(event.pos)
+                    if not self.start_line_drag(event.pos):
+                        self.start_drag(event.pos)
                 elif event.type == pygame.MOUSEMOTION and self.dragging_index is not None:
                     self.drag(event.pos)
+                elif event.type == pygame.MOUSEMOTION and self.dragging_line is not None:
+                    self.drag_line(event.pos)
                 elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                     self.dragging_index = None
+                    self.dragging_line = None
 
             self.draw()
             pygame.display.flip()
@@ -85,7 +92,7 @@ class LabelEditor:
         self.screen.fill(BG)
         self.screen.blit(self.font.render(f"{TITLE} • Label Target Editor", True, TEXT_COLOR), (40, 24))
         self.screen.blit(
-            self.small.render("Drag labels. Press S to print TARGET_SLOTS. Esc to exit.", True, TEXT_COLOR),
+            self.small.render("Drag slots and line handles. Press S to print TARGET_SLOTS + TARGET_LINES.", True, TEXT_COLOR),
             (40, 60),
         )
 
@@ -97,6 +104,10 @@ class LabelEditor:
             name = PART_DEFS[i][0]
             label = self.small.render(name, True, TARGET_OUTLINE)
             self.screen.blit(label, (rect.x + 7, rect.y + 14))
+            pygame.draw.line(self.screen, (70, 70, 70), self.lines[i][0], self.lines[i][1], 3)
+            for endpoint in self.lines[i]:
+                pygame.draw.circle(self.screen, (255, 130, 50), endpoint, 8)
+                pygame.draw.circle(self.screen, (70, 70, 70), endpoint, 2)
 
     def draw_panel_image(self) -> None:
         pygame.draw.rect(self.screen, (186, 176, 155), PANEL_RECT, border_radius=20)
@@ -114,8 +125,25 @@ class LabelEditor:
 
     def print_targets(self) -> None:
         coords = [(r.x, r.y) for r in self.targets]
+        lines = [((l[0][0], l[0][1]), (l[1][0], l[1][1])) for l in self.lines]
         print("\n# Copy this into bombsite_kiosk.py")
         print(f"TARGET_SLOTS = {coords}")
+        print(f"TARGET_LINES = {lines}")
+
+    def start_line_drag(self, pos: tuple[int, int]) -> bool:
+        for i, line in enumerate(self.lines):
+            for endpoint_idx, endpoint in enumerate(line):
+                if pygame.Vector2(endpoint).distance_to(pos) <= 12:
+                    self.dragging_line = (i, endpoint_idx)
+                    return True
+        return False
+
+    def drag_line(self, pos: tuple[int, int]) -> None:
+        if self.dragging_line is None:
+            return
+        i, endpoint_idx = self.dragging_line
+        self.lines[i][endpoint_idx][0] = pos[0]
+        self.lines[i][endpoint_idx][1] = pos[1]
 
 
 def main() -> None:
