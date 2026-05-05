@@ -256,10 +256,6 @@ class BombRunScene:
         self.reset()
 
     def reset(self) -> None:
-        # Target position is tracked in world offsets from crosshair center.
-        self.target_offset_x = random.uniform(-140, 140)
-        self.target_offset_y = 340.0
-
         # Environmental errors to correct.
         self.wind_push = random.uniform(-1.2, 1.2)
         self.forward_speed = random.uniform(1.4, 1.9)
@@ -269,17 +265,21 @@ class BombRunScene:
         self.drift_correction = 0.0
 
         self.run_time = 0.0
-        self.max_run_time = 55.0
+        self.max_run_time = 60.0
         self.ideal_release_y = -26.0
 
-        self.released = False
-        self.release_timer = 0.0
+        self.targets = [self._new_target() for _ in range(4)]
+        self.total_drops = 0
+        self.successful_hits = 0
         self.result_ready = False
         self.impact_distance = 0.0
         self.rating = ""
 
+    def _new_target(self) -> dict[str, float]:
+        return {"x": random.uniform(-160, 160), "y": random.uniform(180, 420)}
+
     def handle_event(self, event: pygame.event.Event) -> bool:
-        if event.type == pygame.KEYDOWN and not self.released:
+        if event.type == pygame.KEYDOWN and not self.result_ready:
             if event.key == pygame.K_LEFT:
                 self.heading_correction -= 0.16
             elif event.key == pygame.K_RIGHT:
@@ -293,44 +293,59 @@ class BombRunScene:
         return self.result_ready
 
     def _release_bomb(self) -> None:
-        self.released = True
-        self.release_timer = 0.0
+        self.total_drops += 1
+        closest = None
+        for i, target in enumerate(self.targets):
+            timing_error = abs(target["y"] - self.ideal_release_y)
+            lateral_error = abs(target["x"])
+            control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.forward_speed - self.drift_correction) * 55
+            distance = math.hypot(lateral_error * 0.9 + control_error * 0.25, timing_error * 0.95)
+            if closest is None or distance < closest[1]:
+                closest = (i, distance)
 
-        # Blend timing and drift/alignment errors into impact distance.
-        timing_error = abs(self.target_offset_y - self.ideal_release_y)
-        lateral_error = abs(self.target_offset_x)
-        control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.forward_speed - self.drift_correction) * 55
-        self.impact_distance = math.hypot(lateral_error * 0.9 + control_error * 0.25, timing_error * 0.95)
+        if closest is None:
+            return
 
+        index, self.impact_distance = closest
         if self.impact_distance <= 42:
             self.rating = "Direct Hit"
+            self.successful_hits += 1
         elif self.impact_distance <= 130:
             self.rating = "Near Miss"
         else:
             self.rating = "Miss"
+        self.targets[index] = self._new_target()
 
     def update(self, dt: float) -> None:
-        if not self.released:
-            self.run_time = min(self.max_run_time, self.run_time + dt)
+        if self.result_ready:
+            return
 
-            # Target moves due to wind + aircraft forward motion and user corrections.
-            self.target_offset_x += (self.wind_push - self.heading_correction) * 55 * dt
-            self.target_offset_y -= (self.forward_speed - self.drift_correction) * 95 * dt
-        else:
-            self.release_timer += dt
-            if self.release_timer >= 1.0:
-                self.result_ready = True
+        self.run_time = min(self.max_run_time, self.run_time + dt)
+        for target in self.targets:
+            target["x"] += (self.wind_push - self.heading_correction) * 55 * dt
+            target["y"] -= (self.forward_speed - self.drift_correction) * 95 * dt
+            if target["y"] < -80:
+                target.update(self._new_target())
+                target["y"] = random.uniform(320, 460)
+            target["x"] = max(-240, min(240, target["x"]))
+        if self.run_time >= self.max_run_time:
+            self.result_ready = True
 
     def snapshot(self) -> dict[str, float | str]:
-        return {"impact_distance": self.impact_distance, "rating": self.rating}
+        return {
+            "impact_distance": self.impact_distance,
+            "rating": self.rating,
+            "drops": str(self.total_drops),
+            "hits": str(self.successful_hits),
+        }
 
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
         screen.fill((11, 17, 25))
         self._draw_viewport(screen, assets)
         self._draw_hud(screen)
 
-        if self.released and not self.result_ready:
-            text = self.fonts["title"].render("Bomb Released", True, (255, 223, 122))
+        if self.rating:
+            text = self.fonts["title"].render(f"{self.rating}", True, (255, 223, 122))
             screen.blit(text, text.get_rect(center=(self.rect.centerx, 80)))
 
     def _draw_viewport(self, screen: pygame.Surface, assets: AssetBank) -> None:
@@ -348,9 +363,10 @@ class BombRunScene:
         self._draw_terrain(screen, assets)
 
         # Draw target inside viewport coordinates.
-        target_pos = (int(cx + self.target_offset_x), int(cy + self.target_offset_y))
-        pygame.draw.rect(screen, (150, 120, 80), (target_pos[0] - 20, target_pos[1] - 16, 40, 32), border_radius=4)
-        pygame.draw.polygon(screen, (180, 70, 70), [(target_pos[0], target_pos[1] - 26), (target_pos[0] - 16, target_pos[1] - 8), (target_pos[0] + 16, target_pos[1] - 8)])
+        for target in self.targets:
+            target_pos = (int(cx + target["x"]), int(cy + target["y"]))
+            pygame.draw.rect(screen, (150, 120, 80), (target_pos[0] - 20, target_pos[1] - 16, 40, 32), border_radius=4)
+            pygame.draw.polygon(screen, (180, 70, 70), [(target_pos[0], target_pos[1] - 26), (target_pos[0] - 16, target_pos[1] - 8), (target_pos[0] + 16, target_pos[1] - 8)])
 
         # Restore clip and overlay viewport border.
         screen.set_clip(clip_previous)
@@ -367,12 +383,12 @@ class BombRunScene:
 
         if assets.map_bg:
             scaled = pygame.transform.smoothscale(assets.map_bg, (r * 2, r * 2))
-            scroll = int((self.run_time * 80) % (r * 2))
+            scroll = int((self.run_time * 48) % (r * 2))
             screen.blit(scaled, (cx - r, cy - r + scroll - r * 2))
             screen.blit(scaled, (cx - r, cy - r + scroll))
             return
 
-        base_y = cy - r + int((self.run_time * 80) % 90)
+        base_y = cy - r + int((self.run_time * 48) % 90)
         for i in range(-2, 12):
             y = base_y + i * 90
             pygame.draw.rect(screen, (42, 62, 42), (cx - r, y, r * 2, 46))
@@ -387,6 +403,7 @@ class BombRunScene:
         steady_color = (130, 240, 130) if steady else (230, 180, 90)
 
         screen.blit(self.fonts["body"].render(f"Run Clock: {seconds_left}s", True, (230, 230, 230)), (40, 62))
+        screen.blit(self.fonts["body"].render(f"Drops: {self.total_drops}  Hits: {self.successful_hits}", True, (230, 230, 230)), (40, 222))
         screen.blit(self.fonts["body"].render(f"Heading Corr: {self.heading_correction:+.2f}", True, (190, 220, 255)), (40, 104))
         screen.blit(self.fonts["body"].render(f"Drift Corr: {self.drift_correction:+.2f}", True, (190, 220, 255)), (40, 142))
         screen.blit(self.fonts["body"].render("Steady" if steady else "Adjusting", True, steady_color), (40, 182))
@@ -398,10 +415,14 @@ class DebriefScene:
         self.fonts = fonts
         self.impact_distance = 0.0
         self.rating = ""
+        self.drops = 0
+        self.hits = 0
 
     def set_result(self, result: dict[str, float | str]) -> None:
         self.impact_distance = float(result["impact_distance"])
         self.rating = str(result["rating"])
+        self.drops = int(result.get("drops", "0"))
+        self.hits = int(result.get("hits", "0"))
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
@@ -413,6 +434,7 @@ class DebriefScene:
         screen.blit(self.fonts["title"].render("Bomb Run Debrief", True, (40, 40, 40)), (40, 40))
         screen.blit(self.fonts["body"].render(f"Hit Distance: {self.impact_distance:.1f} m", True, (20, 20, 20)), (44, 140))
         screen.blit(self.fonts["body"].render(f"Accuracy: {self.rating}", True, (20, 20, 20)), (44, 184))
+        screen.blit(self.fonts["body"].render(f"Bombs dropped: {self.drops}   Direct hits: {self.hits}", True, (20, 20, 20)), (44, 228))
 
         quote = (
             "The Norden bombsight was designed for precision, but real combat conditions—wind, altitude, "
