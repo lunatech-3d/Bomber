@@ -1,0 +1,2 @@
+# Standalone dependencies for the Build the Bombsight kiosk prototype
+pygame==2.6.1
