@@ -1,4 +1,4 @@
-rom __future__ import annotations
+from __future__ import annotations
 
 """Admin helper for positioning bombsight label targets.
 
