@@ -14,11 +14,11 @@ ASSET_DIR = Path(__file__).parent / "assets"
 BOMBSIGHT_IMAGE = Path(r"c:\bomber\football.jpg")
 
 PART_DEFS = [
-    ("Caging Knob", (239, 196, 76)),
-    ("Altitude Knob", (82, 190, 128)),
-    ("Optics", (93, 173, 226)),
-    ("Precision Knob", (236, 112, 99)),
-    ("Telescope Eye Piece", (165, 105, 189)),
+    ("Leveling Knob", (239, 196, 76)),
+    ("Turn & Drift Knob", (82, 190, 128)),
+    ("Rate & Displacement Knob", (93, 173, 226)),
+    ("Disc Speed Drum", (236, 112, 99)),
+    ("Eye Piece", (165, 105, 189)),
 ]
 
 PART_SIZE = (165, 46)
@@ -26,6 +26,16 @@ PART_BG_COLOR = (40, 110, 220)
 PART_BORDER_COLOR = (192, 192, 192)
 PART_TEXT_COLOR = (255, 255, 255)
 BOMBSIGHT_IMAGE_SCALE_BOOST = 1.15
+
+HOME_START = (40, 170)
+HOME_Y_STEP = 90
+TARGET_SLOTS = [
+    (520, 190),
+    (780, 190),
+    (520, 320),
+    (780, 320),
+    (520, 450),
+]
 
 RETURN_LERP_SPEED = 0.18
 RETURN_SNAP_DISTANCE = 1.5
@@ -79,12 +89,13 @@ class AssemblyScene:
 
     def _build_parts(self) -> list[Part]:
         parts = []
-        sx, sy = 40, 170
+        sx, sy = HOME_START        
         part_width, part_height = PART_SIZE
 
         for i, (name, color) in enumerate(PART_DEFS):
-            r = pygame.Rect(sx, sy + i * 90, part_width, part_height)
-            t = pygame.Rect(520 + (i % 2) * 260, 190 + (i // 2) * 130, part_width, part_height)
+            r = pygame.Rect(sx, sy + i * HOME_Y_STEP, part_width, part_height)
+            target_x, target_y = TARGET_SLOTS[i]
+            t = pygame.Rect(target_x, target_y, part_width, part_height)
             parts.append(Part(name=name, color=color, rect=r.copy(), target=t, home=r.topleft))
 
         return parts
@@ -148,7 +159,7 @@ class AssemblyScene:
         screen.blit(self.fonts["title"].render(TITLE, True, (30, 30, 30)), (40, 30))
         screen.blit(
             self.fonts["small"].render(
-                "Norden-style training rig • Burroughs Corporation, Plymouth, Michigan",
+                "Burroughs Corporation - Norden Bombsight Training Simulator",
                 True,
                 (55, 55, 55),
             ),
@@ -176,7 +187,11 @@ class AssemblyScene:
             scaled = pygame.transform.smoothscale(img, new_size)
 
             img_rect = scaled.get_rect(center=panel_rect.center)
+            image_clip = panel_rect.inflate(-8, -8)
+            previous_clip = screen.get_clip()
+            screen.set_clip(image_clip)
             screen.blit(scaled, img_rect.topleft)
+            screen.set_clip(previous_clip)
 
         elif assets.panel:
             screen.blit(pygame.transform.smoothscale(assets.panel, panel_rect.size), panel_rect.topleft)
