@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import math
 import random
 import sys
 import pygame
 
 # ---------------------------- Configuration ---------------------------- #
 TITLE = "Build the Bombsight"
-DESIGN_SIZE = (1280, 720)
 FPS = 60
 ASSET_DIR = Path(__file__).parent / "assets"
 BOMBSIGHT_IMAGE = Path(r"c:\bomber\football.jpg")
@@ -76,6 +76,8 @@ class AssetBank:
 
 
 class AssemblyScene:
+    """Existing drag-and-drop assembly scene (unchanged gameplay)."""
+
     def __init__(self, screen_rect: pygame.Rect, fonts: dict[str, pygame.font.Font]) -> None:
         self.screen_rect = screen_rect
         self.fonts = fonts
@@ -85,7 +87,7 @@ class AssemblyScene:
 
     def _build_parts(self) -> list[Part]:
         parts = []
-        sx, sy = HOME_START        
+        sx, sy = HOME_START
         part_width, part_height = PART_SIZE
 
         self.start_button = pygame.Rect(980, 650, 250, 48)
@@ -153,11 +155,8 @@ class AssemblyScene:
     def completed(self) -> bool:
         return all(p.locked for p in self.parts)
 
-    def ready_to_start(self) -> bool:
-        return self.completed()
-
     def handle_start_click(self, pos: tuple[int, int]) -> bool:
-        return self.ready_to_start() and self.start_button.collidepoint(pos)
+        return self.completed() and self.start_button.collidepoint(pos)
 
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
         screen.fill((224, 219, 205))
@@ -210,12 +209,12 @@ class AssemblyScene:
             if i < len(TARGET_LINES):
                 pygame.draw.line(screen, (72, 72, 72), TARGET_LINES[i][0], TARGET_LINES[i][1], 3)
             pygame.draw.rect(screen, (110, 110, 110), part.target, 2, border_radius=10)
+
         self._draw_definition_box(screen)
-        self.show_start_button = self.completed()
-        if self.show_start_button:
+        if self.completed():
             pygame.draw.rect(screen, (40, 130, 75), self.start_button, border_radius=8)
             pygame.draw.rect(screen, (230, 230, 230), self.start_button, 2, border_radius=8)
-            txt = self.fonts["small"].render("Start Simulation", True, (255, 255, 255))
+            txt = self.fonts["small"].render("Start Bomb Run", True, (255, 255, 255))
             screen.blit(txt, txt.get_rect(center=self.start_button.center))
 
         mouse = pygame.mouse.get_pos()
@@ -246,92 +245,187 @@ class AssemblyScene:
         screen.blit(label, (rect.x + 12, rect.y + 20))
 
 
-class TargetingScene:
+class BombRunScene:
+    """Keyboard-driven bombsight simulation with drift correction and timed bomb release."""
+
     def __init__(self, screen_rect: pygame.Rect, fonts: dict[str, pygame.font.Font]) -> None:
         self.rect = screen_rect
         self.fonts = fonts
-        self.crosshair = [screen_rect.centerx, screen_rect.centery]
-        self.target = [random.randint(240, 1040), random.randint(190, 620)]
-        self.radius = 30
-        self.score = 0
-        self.scroll = 0
+        self.viewport_radius = min(screen_rect.width, screen_rect.height) // 3
+        self.viewport_center = (screen_rect.centerx, screen_rect.centery + 20)
+        self.reset()
 
-    def handle_event(self, event: pygame.event.Event) -> None:
-        if event.type == pygame.MOUSEMOTION:
-            self.crosshair[0], self.crosshair[1] = event.pos
+    def reset(self) -> None:
+        # Target position is tracked in world offsets from crosshair center.
+        self.target_offset_x = random.uniform(-140, 140)
+        self.target_offset_y = 340.0
 
-        elif event.type == pygame.FINGERMOTION:
-            self.crosshair[0] = int(event.x * self.rect.width)
-            self.crosshair[1] = int(event.y * self.rect.height)
+        # Environmental errors to correct.
+        self.wind_push = random.uniform(-1.2, 1.2)
+        self.forward_speed = random.uniform(1.4, 1.9)
 
-        elif event.type == pygame.FINGERDOWN:
-            self.crosshair[0] = int(event.x * self.rect.width)
-            self.crosshair[1] = int(event.y * self.rect.height)
-            self._shoot()
+        # User adjustments (heading and drift knobs).
+        self.heading_correction = 0.0
+        self.drift_correction = 0.0
 
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            self._shoot()
+        self.run_time = 0.0
+        self.max_run_time = 55.0
+        self.ideal_release_y = -26.0
 
-    def _shoot(self) -> None:
-        dx = self.crosshair[0] - self.target[0]
-        dy = self.crosshair[1] - self.target[1]
+        self.released = False
+        self.release_timer = 0.0
+        self.result_ready = False
+        self.impact_distance = 0.0
+        self.rating = ""
 
-        if dx * dx + dy * dy <= self.radius * self.radius:
-            self.score += 1
-            self.target = [random.randint(240, 1040), random.randint(190, 620)]
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.KEYDOWN and not self.released:
+            if event.key == pygame.K_LEFT:
+                self.heading_correction -= 0.16
+            elif event.key == pygame.K_RIGHT:
+                self.heading_correction += 0.16
+            elif event.key == pygame.K_UP:
+                self.drift_correction += 0.16
+            elif event.key == pygame.K_DOWN:
+                self.drift_correction -= 0.16
+            elif event.key == pygame.K_SPACE:
+                self._release_bomb()
+        return self.result_ready
 
-    def update(self) -> None:
-        self.scroll = (self.scroll + 2) % 120
+    def _release_bomb(self) -> None:
+        self.released = True
+        self.release_timer = 0.0
+
+        # Blend timing and drift/alignment errors into impact distance.
+        timing_error = abs(self.target_offset_y - self.ideal_release_y)
+        lateral_error = abs(self.target_offset_x)
+        control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.forward_speed - self.drift_correction) * 55
+        self.impact_distance = math.hypot(lateral_error * 0.9 + control_error * 0.25, timing_error * 0.95)
+
+        if self.impact_distance <= 42:
+            self.rating = "Direct Hit"
+        elif self.impact_distance <= 130:
+            self.rating = "Near Miss"
+        else:
+            self.rating = "Miss"
+
+    def update(self, dt: float) -> None:
+        if not self.released:
+            self.run_time = min(self.max_run_time, self.run_time + dt)
+
+            # Target moves due to wind + aircraft forward motion and user corrections.
+            self.target_offset_x += (self.wind_push - self.heading_correction) * 55 * dt
+            self.target_offset_y -= (self.forward_speed - self.drift_correction) * 95 * dt
+        else:
+            self.release_timer += dt
+            if self.release_timer >= 1.0:
+                self.result_ready = True
+
+    def snapshot(self) -> dict[str, float | str]:
+        return {"impact_distance": self.impact_distance, "rating": self.rating}
 
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
-        screen.fill((19, 34, 56))
-        self._draw_background(screen, assets)
+        screen.fill((11, 17, 25))
+        self._draw_viewport(screen, assets)
+        self._draw_hud(screen)
 
-        screen.blit(self.fonts["title"].render("Targeting Drill", True, (240, 240, 240)), (40, 26))
-        screen.blit(
-            self.fonts["small"].render(
-                "Track the map, center target, tap/click to lock hit.",
-                True,
-                (225, 225, 225),
-            ),
-            (42, 92),
-        )
-        screen.blit(self.fonts["body"].render(f"Score: {self.score}", True, (255, 242, 130)), (1090, 45))
+        if self.released and not self.result_ready:
+            text = self.fonts["title"].render("Bomb Released", True, (255, 223, 122))
+            screen.blit(text, text.get_rect(center=(self.rect.centerx, 80)))
 
-        pygame.draw.circle(screen, (255, 88, 88), self.target, self.radius)
-        pygame.draw.circle(screen, (255, 255, 255), self.target, self.radius, 3)
+    def _draw_viewport(self, screen: pygame.Surface, assets: AssetBank) -> None:
+        cx, cy = self.viewport_center
+        r = self.viewport_radius
 
-        self._draw_crosshair(screen)
+        # Draw black mask around circular viewport.
+        pygame.draw.rect(screen, (5, 8, 12), self.rect)
+        pygame.draw.circle(screen, (28, 42, 28), self.viewport_center, r)
 
-    def _draw_background(self, screen: pygame.Surface, assets: AssetBank) -> None:
+        clip_previous = screen.get_clip()
+        screen.set_clip(pygame.Rect(cx - r, cy - r, r * 2, r * 2))
+
+        # Scrolling terrain/map effect.
+        self._draw_terrain(screen, assets)
+
+        # Draw target inside viewport coordinates.
+        target_pos = (int(cx + self.target_offset_x), int(cy + self.target_offset_y))
+        pygame.draw.rect(screen, (150, 120, 80), (target_pos[0] - 20, target_pos[1] - 16, 40, 32), border_radius=4)
+        pygame.draw.polygon(screen, (180, 70, 70), [(target_pos[0], target_pos[1] - 26), (target_pos[0] - 16, target_pos[1] - 8), (target_pos[0] + 16, target_pos[1] - 8)])
+
+        # Restore clip and overlay viewport border.
+        screen.set_clip(clip_previous)
+        pygame.draw.circle(screen, (120, 128, 120), self.viewport_center, r, 6)
+
+        # Fixed bombsight crosshair at center.
+        pygame.draw.circle(screen, (230, 235, 230), self.viewport_center, 24, 2)
+        pygame.draw.line(screen, (230, 235, 230), (cx - 52, cy), (cx + 52, cy), 2)
+        pygame.draw.line(screen, (230, 235, 230), (cx, cy - 52), (cx, cy + 52), 2)
+
+    def _draw_terrain(self, screen: pygame.Surface, assets: AssetBank) -> None:
+        cx, cy = self.viewport_center
+        r = self.viewport_radius
+
         if assets.map_bg:
-            img = pygame.transform.smoothscale(assets.map_bg, (self.rect.width, self.rect.height))
-            for x in (-self.scroll, self.rect.width - self.scroll):
-                screen.blit(img, (x, 0))
+            scaled = pygame.transform.smoothscale(assets.map_bg, (r * 2, r * 2))
+            scroll = int((self.run_time * 80) % (r * 2))
+            screen.blit(scaled, (cx - r, cy - r + scroll - r * 2))
+            screen.blit(scaled, (cx - r, cy - r + scroll))
             return
 
-        colors = [(36, 61, 92), (42, 74, 114), (49, 88, 135)]
+        base_y = cy - r + int((self.run_time * 80) % 90)
+        for i in range(-2, 12):
+            y = base_y + i * 90
+            pygame.draw.rect(screen, (42, 62, 42), (cx - r, y, r * 2, 46))
+            pygame.draw.rect(screen, (33, 51, 33), (cx - r, y + 46, r * 2, 44))
 
-        for i, color in enumerate(colors):
-            y = 150 + i * 170
-            offset = (self.scroll * (i + 1)) % 180
+    def _draw_hud(self, screen: pygame.Surface) -> None:
+        left = self.fonts["small"].render("LEFT/RIGHT: Heading   UP/DOWN: Drift   SPACE: Release", True, (224, 224, 224))
+        screen.blit(left, (40, 24))
 
-            for x in range(-180, self.rect.width + 180, 180):
-                pygame.draw.rect(screen, color, (x - offset, y, 150, 120), border_radius=12)
+        seconds_left = max(0, int(self.max_run_time - self.run_time))
+        steady = abs(self.wind_push - self.heading_correction) < 0.18 and abs(self.forward_speed - self.drift_correction) < 0.18
+        steady_color = (130, 240, 130) if steady else (230, 180, 90)
 
-    def _draw_crosshair(self, screen: pygame.Surface) -> None:
-        x, y = self.crosshair
+        screen.blit(self.fonts["body"].render(f"Run Clock: {seconds_left}s", True, (230, 230, 230)), (40, 62))
+        screen.blit(self.fonts["body"].render(f"Heading Corr: {self.heading_correction:+.2f}", True, (190, 220, 255)), (40, 104))
+        screen.blit(self.fonts["body"].render(f"Drift Corr: {self.drift_correction:+.2f}", True, (190, 220, 255)), (40, 142))
+        screen.blit(self.fonts["body"].render("Steady" if steady else "Adjusting", True, steady_color), (40, 182))
 
-        pygame.draw.circle(screen, (255, 255, 255), (x, y), 24, 2)
-        pygame.draw.line(screen, (255, 255, 255), (x - 42, y), (x + 42, y), 2)
-        pygame.draw.line(screen, (255, 255, 255), (x, y - 42), (x, y + 42), 2)
+
+class DebriefScene:
+    def __init__(self, screen_rect: pygame.Rect, fonts: dict[str, pygame.font.Font]) -> None:
+        self.rect = screen_rect
+        self.fonts = fonts
+        self.impact_distance = 0.0
+        self.rating = ""
+
+    def set_result(self, result: dict[str, float | str]) -> None:
+        self.impact_distance = float(result["impact_distance"])
+        self.rating = str(result["rating"])
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
+            return True
+        return False
+
+    def draw(self, screen: pygame.Surface, _: AssetBank) -> None:
+        screen.fill((236, 228, 205))
+        screen.blit(self.fonts["title"].render("Bomb Run Debrief", True, (40, 40, 40)), (40, 40))
+        screen.blit(self.fonts["body"].render(f"Hit Distance: {self.impact_distance:.1f} m", True, (20, 20, 20)), (44, 140))
+        screen.blit(self.fonts["body"].render(f"Accuracy: {self.rating}", True, (20, 20, 20)), (44, 184))
+
+        quote = (
+            "The Norden bombsight was designed for precision, but real combat conditions—wind, altitude, "
+            "and enemy fire—made accuracy much more difficult."
+        )
+        screen.blit(self.fonts["small"].render(quote, True, (55, 55, 55)), (44, 280))
+        screen.blit(self.fonts["small"].render("Press SPACE or ENTER to run another simulation.", True, (30, 30, 30)), (44, 340))
 
 
 class KioskApp:
     def __init__(self) -> None:
         pygame.init()
         pygame.display.set_caption(TITLE)
-
         self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
         self.clock = pygame.time.Clock()
 
@@ -343,42 +437,48 @@ class KioskApp:
 
         self.assets = AssetBank()
         self.assembly = AssemblyScene(self.screen.get_rect(), self.fonts)
-        self.targeting = TargetingScene(self.screen.get_rect(), self.fonts)
+        self.bomb_run = BombRunScene(self.screen.get_rect(), self.fonts)
+        self.debrief = DebriefScene(self.screen.get_rect(), self.fonts)
         self.scene = "assembly"
 
     def run(self) -> None:
         while True:
+            dt = self.clock.tick(FPS) / 1000.0
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.quit()
-
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.quit()
 
                 if self.scene == "assembly":
                     self.assembly.handle_event(event)
-                    if (
-                        event.type == pygame.MOUSEBUTTONDOWN
-                        and event.button == 1
-                        and self.assembly.handle_start_click(event.pos)
-                    ):
-                        self.scene = "targeting"
+                    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.assembly.handle_start_click(event.pos):
+                        self.bomb_run.reset()
+                        self.scene = "bomb_run"
+                elif self.scene == "bomb_run":
+                    self.bomb_run.handle_event(event)
                 else:
-                    self.targeting.handle_event(event)
+                    if self.debrief.handle_event(event):
+                        self.bomb_run.reset()
+                        self.scene = "bomb_run"
 
             if self.scene == "assembly":
                 self.assembly.update()
-
-            elif self.scene == "targeting":
-                self.targeting.update()
+            elif self.scene == "bomb_run":
+                self.bomb_run.update(dt)
+                if self.bomb_run.result_ready:
+                    self.debrief.set_result(self.bomb_run.snapshot())
+                    self.scene = "debrief"
 
             if self.scene == "assembly":
                 self.assembly.draw(self.screen, self.assets)
+            elif self.scene == "bomb_run":
+                self.bomb_run.draw(self.screen, self.assets)
             else:
-                self.targeting.draw(self.screen, self.assets)
+                self.debrief.draw(self.screen, self.assets)
 
             pygame.display.flip()
-            self.clock.tick(FPS)
 
     @staticmethod
     def quit() -> None:
