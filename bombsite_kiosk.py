@@ -16,7 +16,7 @@ BOMBSIGHT_IMAGE = Path(r"c:\bomber\football.jpg")
 PART_DEFS = [
     ("Leveling Knob", (239, 196, 76), "Levels the bombsight so calculations stay accurate in flight."),
     ("Turn & Drift Knob", (82, 190, 128), "Compensates for wind drift and aircraft turn effects."),
-    ("Rate & Displacement Knob", (93, 173, 226), "Adjusts target movement rate and displacement corrections."),
+    ("Rate & Displ.Knob", (93, 173, 226), "Adjusts target movement rate and displacement corrections."),
     ("Disc Speed Drum", (236, 112, 99), "Sets bombing disc speed values used by the aiming mechanism."),
     ("Eye Piece", (165, 105, 189), "Viewing lens used to align and track the target area."),
 ]
