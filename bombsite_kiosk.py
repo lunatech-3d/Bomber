@@ -186,9 +186,9 @@ class AssemblyScene:
             logo = pygame.transform.smoothscale(assets.usaaf_logo, (96, 96))
             screen.blit(logo, (header.x + 24, header.y + 26))
         title_font = pygame.font.SysFont("impact", 74, bold=False)
-        sub_font = pygame.font.SysFont("arial narrow", 56, bold=True)
+        sub_font = pygame.font.SysFont("arial narrow", 54, bold=True)
         screen.blit(title_font.render("NORDEN BOMB SIGHT", True, (236, 224, 201)), (header.x + 170, header.y + 28))
-        screen.blit(sub_font.render("TRAINING INTERFACE", True, accent_gold), (header.x + 360, header.y + 104))
+        screen.blit(sub_font.render("TRAINING INTERFACE", True, accent_gold), (header.x + 480, header.y + 112))
         if assets.burroughs_logo:
             b_logo = pygame.transform.smoothscale(assets.burroughs_logo, (85, 85))
             screen.blit(b_logo, (header.right - 270, header.y + 24))
@@ -217,7 +217,7 @@ class AssemblyScene:
         screen.blit(self.fonts["small"].render("• CALIBRATION", True, accent_gold), (left_panel.x + 28, left_panel.bottom - 128))
         if assets.crosshairs:
             ch = pygame.transform.smoothscale(assets.crosshairs, (132, 132))
-            screen.blit(ch, (left_panel.centerx - 66, left_panel.bottom - 148))
+            screen.blit(ch, (left_panel.centerx - 96, left_panel.bottom - 148))
 
         panel_rect = pygame.Rect(left_panel.right + 14, motto.bottom + 16, outer.width - 640, outer.height - 280)
         pygame.draw.rect(screen, (227, 212, 183), panel_rect, border_radius=12)
@@ -568,7 +568,7 @@ class KioskApp:
     def __init__(self) -> None:
         pygame.init()
         pygame.display.set_caption(TITLE)
-        self.screen = pygame.display.set_mode(DESIGN_SIZE)
+        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)        
         self.clock = pygame.time.Clock()
 
         self.fonts = {

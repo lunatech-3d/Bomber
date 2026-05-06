@@ -21,7 +21,8 @@ from bombsite_kiosk import (
 )
 
 FPS = 60
-PANEL_RECT = pygame.Rect(446, 246, 820, 768)
+PANEL_RECT = pygame.Rect(321, 228, 1250, 776)
+IMAGE_ZONE_RECT = pygame.Rect(PANEL_RECT.x + 24, PANEL_RECT.y + 70, PANEL_RECT.width - 48, PANEL_RECT.height - 84)
 BG = (224, 219, 205)
 TARGET_OUTLINE = (30, 120, 220)
 TARGET_FILL = (238, 245, 255)
@@ -110,18 +111,24 @@ class LabelEditor:
                 pygame.draw.circle(self.screen, (70, 70, 70), endpoint, 2)
 
     def draw_panel_image(self) -> None:
-        pygame.draw.rect(self.screen, (186, 176, 155), PANEL_RECT, border_radius=20)
-        pygame.draw.rect(self.screen, (95, 87, 71), PANEL_RECT, 3, border_radius=20)
+        pygame.draw.rect(self.screen, (227, 212, 183), PANEL_RECT, border_radius=12)
+        pygame.draw.rect(self.screen, (86, 74, 57), PANEL_RECT, 2, border_radius=12)
+        top_banner = pygame.Rect(PANEL_RECT.x + 6, PANEL_RECT.y + 6, PANEL_RECT.width - 12, 56)
+        pygame.draw.rect(self.screen, (25, 27, 25), top_banner, border_radius=6)
 
         if not self.assets.bombsight_photo:
             return
 
         img = self.assets.bombsight_photo
-        scale = min(PANEL_RECT.width / img.get_width(), PANEL_RECT.height / img.get_height())
+        scale = min(IMAGE_ZONE_RECT.width / img.get_width(), IMAGE_ZONE_RECT.height / img.get_height())
         scale *= BOMBSIGHT_IMAGE_SCALE_BOOST
         new_size = (int(img.get_width() * scale), int(img.get_height() * scale))
         scaled = pygame.transform.smoothscale(img, new_size)
-        self.screen.blit(scaled, scaled.get_rect(center=PANEL_RECT.center).topleft)
+        img_rect = scaled.get_rect(center=IMAGE_ZONE_RECT.center)
+        previous_clip = self.screen.get_clip()
+        self.screen.set_clip(IMAGE_ZONE_RECT)
+        self.screen.blit(scaled, img_rect.topleft)
+        self.screen.set_clip(previous_clip)
 
     def print_targets(self) -> None:
         coords = [(r.x, r.y) for r in self.targets]
