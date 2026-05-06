@@ -159,7 +159,7 @@ class AssemblyScene:
         return self.completed() and self.start_button.collidepoint(pos)
 
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
-        screen.fill((224, 219, 205))
+        screen.fill((255, 255, 255))
 
         screen.blit(self.fonts["title"].render(TITLE, True, (30, 30, 30)), (40, 30))
         screen.blit(
@@ -182,9 +182,6 @@ class AssemblyScene:
         panel_rect = pygame.Rect(470, 130, 760, 520)
 
         if assets.bombsight_photo:
-            pygame.draw.rect(screen, (186, 176, 155), panel_rect, border_radius=20)
-            pygame.draw.rect(screen, (95, 87, 71), panel_rect, 3, border_radius=20)
-
             img = assets.bombsight_photo
             scale = min(panel_rect.width / img.get_width(), panel_rect.height / img.get_height())
             scale *= BOMBSIGHT_IMAGE_SCALE_BOOST
@@ -192,7 +189,7 @@ class AssemblyScene:
             scaled = pygame.transform.smoothscale(img, new_size)
 
             img_rect = scaled.get_rect(center=panel_rect.center)
-            image_clip = panel_rect.inflate(-8, -8)
+            image_clip = panel_rect
             previous_clip = screen.get_clip()
             screen.set_clip(image_clip)
             screen.blit(scaled, img_rect.topleft)
