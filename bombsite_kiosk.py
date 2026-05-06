@@ -22,9 +22,9 @@ PART_DEFS = [
 ]
 
 PART_SIZE = (165, 46)
-PART_BG_COLOR = (40, 110, 220)
-PART_BORDER_COLOR = (192, 192, 192)
-PART_TEXT_COLOR = (255, 255, 255)
+PART_BG_COLOR = (255, 255, 255)
+PART_BORDER_COLOR = (255, 255, 255)
+PART_TEXT_COLOR = (30, 30, 30)
 BOMBSIGHT_IMAGE_SCALE_BOOST = 1.15
 
 HOME_START = (40, 170)
@@ -208,7 +208,6 @@ class AssemblyScene:
         for i, part in enumerate(self.parts):
             if i < len(TARGET_LINES):
                 pygame.draw.line(screen, (72, 72, 72), TARGET_LINES[i][0], TARGET_LINES[i][1], 3)
-            pygame.draw.rect(screen, (110, 110, 110), part.target, 2, border_radius=10)
 
         self._draw_definition_box(screen)
         if self.completed():
@@ -230,7 +229,6 @@ class AssemblyScene:
         surf = pygame.Surface(part.rect.size, pygame.SRCALPHA)
 
         pygame.draw.rect(surf, (*PART_BG_COLOR, alpha), surf.get_rect(), border_radius=9)
-        pygame.draw.rect(surf, (*PART_BORDER_COLOR, alpha), surf.get_rect(), 2, border_radius=9)
 
         label = self.fonts["small"].render(part.name, True, PART_TEXT_COLOR)
         surf.blit(label, label.get_rect(center=surf.get_rect().center))
@@ -276,7 +274,7 @@ class BombRunScene:
         self.result_ready = False
         self.impact_distance = 0.0
         self.rating = ""
-        self.impact_effects: list[dict[str, float]] = []
+        self.impact_effects: list[dict[str, float | str]] = []
 
     def _new_target(self) -> dict[str, float]:
         return {"x": random.uniform(-160, 160), "y": random.uniform(220, 560)}
@@ -311,24 +309,28 @@ class BombRunScene:
 
         index, self.impact_distance = closest
         impact_target = self.targets[index]
-        self.impact_effects.append(
-            {
-                "x": impact_target["x"],
-                "y": impact_target["y"],
-                "age": 0.0,
-                "duration": 0.55,
-                "radius": 14.0,
-            }
-        )
+        timing_offset = impact_target["y"] - self.ideal_release_y
+        lateral_offset = impact_target["x"]
+        impact_x = max(-self.viewport_radius + 18, min(self.viewport_radius - 18, lateral_offset * 0.75 + (self.wind_push - self.heading_correction) * 55))
+        impact_y = max(-self.viewport_radius + 18, min(self.viewport_radius - 18, timing_offset * 0.35))
         if self.impact_distance <= 42:
             self.rating = "Direct Hit"
             self.successful_hits += 1
+            self.impact_effects.append(
+                {"kind": "blast", "x": 0.0, "y": 0.0, "age": 0.0, "duration": 0.55, "radius": 14.0}
+            )
             # Remove hit target from view immediately; recycle below the viewport.
             self.targets[index] = {"x": random.uniform(-160, 160), "y": random.uniform(620, 820)}
         elif self.impact_distance <= 130:
             self.rating = "Near Miss"
+            self.impact_effects.append(
+                {"kind": "crater", "x": impact_x, "y": impact_y, "age": 0.0, "duration": 2.2, "radius": 10.0}
+            )
         else:
             self.rating = "Miss"
+            self.impact_effects.append(
+                {"kind": "crater", "x": impact_x, "y": impact_y, "age": 0.0, "duration": 2.2, "radius": 10.0}
+            )
 
     def update(self, dt: float) -> None:
         if self.result_ready:
@@ -405,14 +407,23 @@ class BombRunScene:
                 continue
             ex = int(cx + effect["x"])
             ey = int(cy + effect["y"])
-            outer_radius = int(effect["radius"] + progress * 32)
-            inner_radius = max(2, int((1.0 - progress) * 9))
-            alpha = max(0, int(220 * (1.0 - progress)))
+            if effect["kind"] == "blast":
+                outer_radius = int(effect["radius"] + progress * 32)
+                inner_radius = max(2, int((1.0 - progress) * 9))
+                alpha = max(0, int(220 * (1.0 - progress)))
 
-            flash = pygame.Surface((outer_radius * 2 + 2, outer_radius * 2 + 2), pygame.SRCALPHA)
-            pygame.draw.circle(flash, (255, 170, 60, alpha), flash.get_rect().center, outer_radius, width=4)
-            pygame.draw.circle(flash, (255, 230, 160, min(255, alpha + 25)), flash.get_rect().center, inner_radius)
-            screen.blit(flash, (ex - flash.get_width() // 2, ey - flash.get_height() // 2))
+                flash = pygame.Surface((outer_radius * 2 + 2, outer_radius * 2 + 2), pygame.SRCALPHA)
+                pygame.draw.circle(flash, (255, 170, 60, alpha), flash.get_rect().center, outer_radius, width=4)
+                pygame.draw.circle(flash, (255, 230, 160, min(255, alpha + 25)), flash.get_rect().center, inner_radius)
+                screen.blit(flash, (ex - flash.get_width() // 2, ey - flash.get_height() // 2))
+            else:
+                crater_radius = int(effect["radius"] * (1.0 - 0.25 * min(progress, 1.0)))
+                crater = pygame.Surface((crater_radius * 2 + 6, crater_radius * 2 + 6), pygame.SRCALPHA)
+                center = crater.get_rect().center
+                pygame.draw.circle(crater, (45, 35, 25, 210), center, crater_radius)
+                pygame.draw.circle(crater, (28, 22, 16, 220), center, max(2, crater_radius - 3), width=2)
+                pygame.draw.circle(crater, (95, 80, 60, 120), (center[0] - 2, center[1] - 2), max(2, crater_radius // 2), width=1)
+                screen.blit(crater, (ex - crater.get_width() // 2, ey - crater.get_height() // 2))
 
         # Restore clip and overlay viewport border.
         screen.set_clip(clip_previous)
