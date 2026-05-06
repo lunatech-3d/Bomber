@@ -18,11 +18,13 @@ from bombsite_kiosk import (
     TARGET_LINES,
     TITLE,
     AssetBank,
+    get_layout_geometry,
 )
 
 FPS = 60
-PANEL_RECT = pygame.Rect(321, 228, 1250, 776)
-IMAGE_ZONE_RECT = pygame.Rect(PANEL_RECT.x + 24, PANEL_RECT.y + 70, PANEL_RECT.width - 48, PANEL_RECT.height - 84)
+LAYOUT = get_layout_geometry()
+PANEL_RECT = LAYOUT["panel_rect"]
+IMAGE_ZONE_RECT = LAYOUT["image_zone"]
 BG = (224, 219, 205)
 TARGET_OUTLINE = (30, 120, 220)
 TARGET_FILL = (238, 245, 255)

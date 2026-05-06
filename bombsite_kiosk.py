@@ -43,6 +43,27 @@ RETURN_LERP_SPEED = 0.18
 RETURN_SNAP_DISTANCE = 1.5
 
 
+def get_layout_geometry() -> dict[str, pygame.Rect]:
+    """Single source of truth for assembly scene layout geometry."""
+    screen_rect = pygame.Rect((0, 0), DESIGN_SIZE)
+    outer = screen_rect.inflate(-30, -24)
+    header = pygame.Rect(outer.x + 6, outer.y + 6, outer.width - 12, 150)
+    motto = pygame.Rect(header.x, header.bottom + 4, header.width, 40)
+    left_panel = pygame.Rect(outer.x + 12, motto.bottom + 10, 280, outer.height - 270)
+    panel_rect = pygame.Rect(left_panel.right + 14, motto.bottom + 16, outer.width - 640, outer.height - 280)
+    image_zone = pygame.Rect(panel_rect.x + 24, panel_rect.y + 70, panel_rect.width - 48, panel_rect.height - 84)
+    label_panel = pygame.Rect(panel_rect.right + 16, panel_rect.y, 300, panel_rect.height)
+    return {
+        "outer": outer,
+        "header": header,
+        "motto": motto,
+        "left_panel": left_panel,
+        "panel_rect": panel_rect,
+        "image_zone": image_zone,
+        "label_panel": label_panel,
+    }
+
+
 @dataclass
 class Part:
     name: str
@@ -99,7 +120,10 @@ class AssemblyScene:
 
     def _build_parts(self) -> list[Part]:
         parts = []
-        sx, sy = HOME_START
+        layout = get_layout_geometry()
+        label_panel = layout["label_panel"]
+        sx = label_panel.x + (label_panel.width - PART_SIZE[0]) // 2
+        sy = label_panel.y + 84
         part_width, part_height = PART_SIZE
 
         self.start_button = pygame.Rect(980, 714, 250, 48)
@@ -176,11 +200,12 @@ class AssemblyScene:
         dark_panel = (25, 27, 25)
         accent_gold = (195, 149, 67)
         screen.fill((30, 28, 24))
-        outer = self.screen_rect.inflate(-30, -24)
+        layout = get_layout_geometry()
+        outer = layout["outer"]
         pygame.draw.rect(screen, parchment, outer, border_radius=16)
         pygame.draw.rect(screen, (90, 80, 62), outer, 3, border_radius=16)
 
-        header = pygame.Rect(outer.x + 6, outer.y + 6, outer.width - 12, 150)
+        header = layout["header"]
         pygame.draw.rect(screen, navy, header, border_top_left_radius=12, border_top_right_radius=12)
         pygame.draw.rect(screen, (162, 146, 117), header, 2)
         if assets.usaaf_logo:
@@ -199,11 +224,11 @@ class AssemblyScene:
         screen.blit(self.fonts["small"].render("Reproduction Dept.", True, (197, 181, 150)), (header.right - 170, header.y + 92))
         screen.blit(self.fonts["small"].render("L.F. Sept. 1943", True, (197, 181, 150)), (header.right - 170, header.y + 118))
 
-        motto = pygame.Rect(header.x, header.bottom + 4, header.width, 40)
+        motto = layout["motto"]
         pygame.draw.rect(screen, (227, 214, 186), motto)
         screen.blit(meta_font.render("ACCURACY • DEPENDS • ON • TRAINING", True, navy), (motto.x + 340, motto.y + 6))
 
-        left_panel = pygame.Rect(outer.x + 12, motto.bottom + 10, 280, outer.height - 270)
+        left_panel = layout["left_panel"]
         pygame.draw.rect(screen, navy, left_panel, border_radius=10)
         pygame.draw.rect(screen, (123, 105, 75), left_panel, 2, border_radius=10)
         if assets.star_wings:
@@ -218,16 +243,16 @@ class AssemblyScene:
         screen.blit(self.fonts["small"].render("• CALIBRATION", True, accent_gold), (left_panel.x + 28, left_panel.bottom - 128))
         if assets.crosshairs:
             ch = pygame.transform.smoothscale(assets.crosshairs, (132, 132))
-            screen.blit(ch, (left_panel.centerx - 96, left_panel.bottom - 148))
+            screen.blit(ch, (left_panel.centerx - 66, left_panel.bottom - 148))
 
-        panel_rect = pygame.Rect(left_panel.right + 14, motto.bottom + 16, outer.width - 640, outer.height - 280)
+        panel_rect = layout["panel_rect"]
         pygame.draw.rect(screen, (227, 212, 183), panel_rect, border_radius=12)
         pygame.draw.rect(screen, (86, 74, 57), panel_rect, 2, border_radius=12)
         top_banner = pygame.Rect(panel_rect.x + 6, panel_rect.y + 6, panel_rect.width - 12, 56)
         pygame.draw.rect(screen, dark_panel, top_banner, border_radius=6)
         screen.blit(meta_font.render("DRAG EACH LABEL TO ITS CORRECT LOCATION", True, (225, 210, 176)), (top_banner.x + 64, top_banner.y + 14))
 
-        image_zone = pygame.Rect(panel_rect.x + 24, panel_rect.y + 70, panel_rect.width - 48, panel_rect.height - 84)
+        image_zone = layout["image_zone"]
         if assets.bombsight_photo:
             img = assets.bombsight_photo
             scale = min(image_zone.width / img.get_width(), image_zone.height / img.get_height())
@@ -265,7 +290,7 @@ class AssemblyScene:
             if part.locked and part.target.collidepoint(mouse):
                 self.current_definition = part.definition
 
-        label_panel = pygame.Rect(panel_rect.right + 16, panel_rect.y, 300, panel_rect.height)
+        label_panel = layout["label_panel"]
         pygame.draw.rect(screen, (30, 30, 28), label_panel, border_radius=10)
         pygame.draw.rect(screen, (126, 108, 74), label_panel, 2, border_radius=10)
         screen.blit(meta_font.render("AVAILABLE LABELS", True, (225, 210, 176)), (label_panel.x + 44, label_panel.y + 14))

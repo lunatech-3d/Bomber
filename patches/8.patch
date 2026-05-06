@@ -1,0 +1,59 @@
+diff --git a/admin_label_editor.py b/admin_label_editor.py
+index 8fc488a7e61850465785069806cd2884ed0b1809..783f230033d69fb0eafa977b4e9cc7e03ff5a6c6 100644
+--- a/admin_label_editor.py
++++ b/admin_label_editor.py
+@@ -1,50 +1,52 @@
+ from __future__ import annotations
+ 
+ """Admin helper for positioning bombsight label targets.
+ 
+ This tool opens the same bombsight image used by ``bombsite_kiosk.py`` and lets
+ an admin drag target labels into place. Press ``S`` to print updated target
+ coordinates that can be copied back into ``bombsite_kiosk.py``.
+ """
+ 
+ import pygame
+ 
+ from bombsite_kiosk import (
+     BOMBSIGHT_IMAGE_SCALE_BOOST,
+     DESIGN_SIZE,
+     PART_DEFS,
+     PART_SIZE,
+     TARGET_SLOTS,
+     TARGET_LINES,
+     TITLE,
+     AssetBank,
++    get_layout_geometry,
+ )
+ 
+ FPS = 60
+-PANEL_RECT = pygame.Rect(321, 228, 1250, 776)
+-IMAGE_ZONE_RECT = pygame.Rect(PANEL_RECT.x + 24, PANEL_RECT.y + 70, PANEL_RECT.width - 48, PANEL_RECT.height - 84)
++LAYOUT = get_layout_geometry()
++PANEL_RECT = LAYOUT["panel_rect"]
++IMAGE_ZONE_RECT = LAYOUT["image_zone"]
+ BG = (224, 219, 205)
+ TARGET_OUTLINE = (30, 120, 220)
+ TARGET_FILL = (238, 245, 255)
+ TEXT_COLOR = (25, 25, 25)
+ 
+ 
+ class LabelEditor:
+     def __init__(self, screen: pygame.Surface) -> None:
+         self.screen = screen
+         self.font = pygame.font.SysFont("arial", 24)
+         self.small = pygame.font.SysFont("arial", 18)
+         self.assets = AssetBank()
+         self.dragging_index: int | None = None
+         self.drag_offset = (0, 0)
+ 
+         self.targets = [
+             pygame.Rect(slot[0], slot[1], PART_SIZE[0], PART_SIZE[1]) for slot in TARGET_SLOTS
+         ]
+         self.lines = [[list(start), list(end)] for start, end in TARGET_LINES]
+         self.dragging_line: tuple[int, int] | None = None
+ 
+     def run(self) -> None:
+         clock = pygame.time.Clock()
+         running = True
+ 
