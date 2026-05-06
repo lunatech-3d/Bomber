@@ -276,6 +276,7 @@ class BombRunScene:
         self.result_ready = False
         self.impact_distance = 0.0
         self.rating = ""
+        self.impact_effects: list[dict[str, float]] = []
 
     def _new_target(self) -> dict[str, float]:
         return {"x": random.uniform(-160, 160), "y": random.uniform(220, 560)}
@@ -309,6 +310,16 @@ class BombRunScene:
             return
 
         index, self.impact_distance = closest
+        impact_target = self.targets[index]
+        self.impact_effects.append(
+            {
+                "x": impact_target["x"],
+                "y": impact_target["y"],
+                "age": 0.0,
+                "duration": 0.55,
+                "radius": 14.0,
+            }
+        )
         if self.impact_distance <= 42:
             self.rating = "Direct Hit"
             self.successful_hits += 1
@@ -339,6 +350,11 @@ class BombRunScene:
                 target.update(self._new_target())
                 target["y"] = random.uniform(420, 620)
             target["x"] = max(-260, min(260, target["x"]))
+
+        for effect in self.impact_effects:
+            effect["age"] += dt
+            effect["y"] -= speed * 62 * dt
+        self.impact_effects = [effect for effect in self.impact_effects if effect["age"] < effect["duration"]]
         if self.run_time >= self.max_run_time:
             self.result_ready = True
 
@@ -382,6 +398,21 @@ class BombRunScene:
             target_pos = (int(cx + target["x"]), int(cy + target["y"]))
             pygame.draw.rect(screen, (150, 120, 80), (target_pos[0] - 20, target_pos[1] - 16, 40, 32), border_radius=4)
             pygame.draw.polygon(screen, (180, 70, 70), [(target_pos[0], target_pos[1] - 26), (target_pos[0] - 16, target_pos[1] - 8), (target_pos[0] + 16, target_pos[1] - 8)])
+
+        for effect in self.impact_effects:
+            progress = effect["age"] / effect["duration"]
+            if progress >= 1.0:
+                continue
+            ex = int(cx + effect["x"])
+            ey = int(cy + effect["y"])
+            outer_radius = int(effect["radius"] + progress * 32)
+            inner_radius = max(2, int((1.0 - progress) * 9))
+            alpha = max(0, int(220 * (1.0 - progress)))
+
+            flash = pygame.Surface((outer_radius * 2 + 2, outer_radius * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(flash, (255, 170, 60, alpha), flash.get_rect().center, outer_radius, width=4)
+            pygame.draw.circle(flash, (255, 230, 160, min(255, alpha + 25)), flash.get_rect().center, inner_radius)
+            screen.blit(flash, (ex - flash.get_width() // 2, ey - flash.get_height() // 2))
 
         # Restore clip and overlay viewport border.
         screen.set_clip(clip_previous)

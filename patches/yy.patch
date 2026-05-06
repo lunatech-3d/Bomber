@@ -1,0 +1,193 @@
+diff --git a/bombsite_kiosk.py b/bombsite_kiosk.py
+index 8e768b40fb3f82f26063ad71ec84bbba5da01415..b10c2352737deb48d46353e8539f490e1d402318 100644
+--- a/bombsite_kiosk.py
++++ b/bombsite_kiosk.py
+@@ -254,157 +254,188 @@ class BombRunScene:
+         self.viewport_radius = min(screen_rect.width, screen_rect.height) // 3
+         self.viewport_center = (screen_rect.centerx, screen_rect.centery + 20)
+         self.reset()
+ 
+     def reset(self) -> None:
+         # Environmental errors to correct.
+         self.wind_push = random.uniform(-1.2, 1.2)
+         self.forward_speed = random.uniform(0.70, 0.95)
+ 
+         # User adjustments (heading and speed controls).
+         self.heading_correction = 0.0
+         self.speed_adjust = 0.0
+         self.min_speed = 0.25
+         self.max_speed = 2.2
+ 
+         self.run_time = 0.0
+         self.max_run_time = 60.0
+         self.ideal_release_y = -26.0
+ 
+         self.targets = [self._new_target() for _ in range(4)]
+         self.total_drops = 0
+         self.successful_hits = 0
+         self.result_ready = False
+         self.impact_distance = 0.0
+         self.rating = ""
++        self.impact_effects: list[dict[str, float]] = []
+ 
+     def _new_target(self) -> dict[str, float]:
+         return {"x": random.uniform(-160, 160), "y": random.uniform(220, 560)}
+ 
+     def handle_event(self, event: pygame.event.Event) -> bool:
+         if event.type == pygame.KEYDOWN and not self.result_ready:
+             if event.key == pygame.K_LEFT:
+                 self.heading_correction -= 0.16
+             elif event.key == pygame.K_RIGHT:
+                 self.heading_correction += 0.16
+             elif event.key == pygame.K_UP:
+                 self.speed_adjust += 0.10
+             elif event.key == pygame.K_DOWN:
+                 self.speed_adjust -= 0.10
+             elif event.key == pygame.K_SPACE:
+                 self._release_bomb()
+         return self.result_ready
+ 
+     def _release_bomb(self) -> None:
+         self.total_drops += 1
+         closest = None
+         for i, target in enumerate(self.targets):
+             timing_error = abs(target["y"] - self.ideal_release_y)
+             lateral_error = abs(target["x"])
+             control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.current_speed() - 1.15) * 55
+             distance = math.hypot(lateral_error * 0.9 + control_error * 0.25, timing_error * 0.95)
+             if closest is None or distance < closest[1]:
+                 closest = (i, distance)
+ 
+         if closest is None:
+             return
+ 
+         index, self.impact_distance = closest
++        impact_target = self.targets[index]
++        self.impact_effects.append(
++            {
++                "x": impact_target["x"],
++                "y": impact_target["y"],
++                "age": 0.0,
++                "duration": 0.55,
++                "radius": 14.0,
++            }
++        )
+         if self.impact_distance <= 42:
+             self.rating = "Direct Hit"
+             self.successful_hits += 1
+             # Remove hit target from view immediately; recycle below the viewport.
+             self.targets[index] = {"x": random.uniform(-160, 160), "y": random.uniform(620, 820)}
+         elif self.impact_distance <= 130:
+             self.rating = "Near Miss"
+         else:
+             self.rating = "Miss"
+ 
+     def update(self, dt: float) -> None:
+         if self.result_ready:
+             return
+ 
+         self.run_time = min(self.max_run_time, self.run_time + dt)
+         speed = self.current_speed()
+ 
+         if speed <= self.min_speed:
+             self.rating = "Stalled Aircraft"
+             self.result_ready = True
+             return
+ 
+         for target in self.targets:
+             target["x"] += (self.wind_push - self.heading_correction) * 55 * dt
+             target["y"] -= speed * 62 * dt
+             radial_distance = math.hypot(target["x"], target["y"])
+             if radial_distance > self.viewport_radius + 36 and target["y"] < 0:
+                 target.update(self._new_target())
+                 target["y"] = random.uniform(420, 620)
+             target["x"] = max(-260, min(260, target["x"]))
++
++        for effect in self.impact_effects:
++            effect["age"] += dt
++            effect["y"] -= speed * 62 * dt
++        self.impact_effects = [effect for effect in self.impact_effects if effect["age"] < effect["duration"]]
+         if self.run_time >= self.max_run_time:
+             self.result_ready = True
+ 
+     def current_speed(self) -> float:
+         return max(self.min_speed, min(self.max_speed, self.forward_speed + self.speed_adjust))
+ 
+     def snapshot(self) -> dict[str, float | str]:
+         return {
+             "impact_distance": self.impact_distance,
+             "rating": self.rating,
+             "drops": str(self.total_drops),
+             "hits": str(self.successful_hits),
+             "speed": f"{self.current_speed():.2f}",
+         }
+ 
+     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
+         screen.fill((11, 17, 25))
+         self._draw_viewport(screen, assets)
+         self._draw_hud(screen)
+ 
+         if self.rating:
+             text = self.fonts["title"].render(f"{self.rating}", True, (255, 223, 122))
+             screen.blit(text, text.get_rect(center=(self.rect.centerx, 80)))
+ 
+     def _draw_viewport(self, screen: pygame.Surface, assets: AssetBank) -> None:
+         cx, cy = self.viewport_center
+         r = self.viewport_radius
+ 
+         # Draw black mask around circular viewport.
+         pygame.draw.rect(screen, (5, 8, 12), self.rect)
+         pygame.draw.circle(screen, (28, 42, 28), self.viewport_center, r)
+ 
+         clip_previous = screen.get_clip()
+         screen.set_clip(pygame.Rect(cx - r, cy - r, r * 2, r * 2))
+ 
+         # Scrolling terrain/map effect.
+         self._draw_terrain(screen, assets)
+ 
+         # Draw target inside viewport coordinates.
+         for target in self.targets:
+             target_pos = (int(cx + target["x"]), int(cy + target["y"]))
+             pygame.draw.rect(screen, (150, 120, 80), (target_pos[0] - 20, target_pos[1] - 16, 40, 32), border_radius=4)
+             pygame.draw.polygon(screen, (180, 70, 70), [(target_pos[0], target_pos[1] - 26), (target_pos[0] - 16, target_pos[1] - 8), (target_pos[0] + 16, target_pos[1] - 8)])
+ 
++        for effect in self.impact_effects:
++            progress = effect["age"] / effect["duration"]
++            if progress >= 1.0:
++                continue
++            ex = int(cx + effect["x"])
++            ey = int(cy + effect["y"])
++            outer_radius = int(effect["radius"] + progress * 32)
++            inner_radius = max(2, int((1.0 - progress) * 9))
++            alpha = max(0, int(220 * (1.0 - progress)))
++
++            flash = pygame.Surface((outer_radius * 2 + 2, outer_radius * 2 + 2), pygame.SRCALPHA)
++            pygame.draw.circle(flash, (255, 170, 60, alpha), flash.get_rect().center, outer_radius, width=4)
++            pygame.draw.circle(flash, (255, 230, 160, min(255, alpha + 25)), flash.get_rect().center, inner_radius)
++            screen.blit(flash, (ex - flash.get_width() // 2, ey - flash.get_height() // 2))
++
+         # Restore clip and overlay viewport border.
+         screen.set_clip(clip_previous)
+         pygame.draw.circle(screen, (120, 128, 120), self.viewport_center, r, 6)
+ 
+         # Fixed bombsight crosshair at center.
+         pygame.draw.circle(screen, (230, 235, 230), self.viewport_center, 24, 2)
+         pygame.draw.line(screen, (230, 235, 230), (cx - 52, cy), (cx + 52, cy), 2)
+         pygame.draw.line(screen, (230, 235, 230), (cx, cy - 52), (cx, cy + 52), 2)
+ 
+     def _draw_terrain(self, screen: pygame.Surface, assets: AssetBank) -> None:
+         cx, cy = self.viewport_center
+         r = self.viewport_radius
+ 
+         if assets.map_bg:
+             scaled = pygame.transform.smoothscale(assets.map_bg, (r * 2, r * 2))
+             scroll = int((self.run_time * self.current_speed() * 30) % (r * 2))
+             screen.blit(scaled, (cx - r, cy - r + scroll - r * 2))
+             screen.blit(scaled, (cx - r, cy - r + scroll))
+             return
+ 
+         base_y = cy - r + int((self.run_time * self.current_speed() * 30) % 90)
+         for i in range(-2, 12):
+             y = base_y + i * 90
+             pygame.draw.rect(screen, (42, 62, 42), (cx - r, y, r * 2, 46))
+             pygame.draw.rect(screen, (33, 51, 33), (cx - r, y + 46, r * 2, 44))
