@@ -21,7 +21,7 @@ from bombsite_kiosk import (
 )
 
 FPS = 60
-PANEL_RECT = pygame.Rect(470, 130, 760, 520)
+PANEL_RECT = pygame.Rect(446, 246, 820, 768)
 BG = (224, 219, 205)
 TARGET_OUTLINE = (30, 120, 220)
 TARGET_FILL = (238, 245, 255)

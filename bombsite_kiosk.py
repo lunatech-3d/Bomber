@@ -10,6 +10,7 @@ import pygame
 # ---------------------------- Configuration ---------------------------- #
 TITLE = "Build the Bombsight"
 FPS = 60
+DESIGN_SIZE = (1920, 1080)
 ASSET_DIR = Path(__file__).parent / "assets"
 BOMBSIGHT_IMAGE = Path(r"c:\bomber\football.jpg")
 
@@ -32,7 +33,7 @@ CLASSIFIED_IMAGE = Path(r"c:\bomber\Classified.png")
 CROSSHAIRS_IMAGE = Path(r"c:\bomber\crosshairs.png")
 STARWITHWINGS_IMAGE = Path(r"c:\bomber\starwithwings.png")
 
-HOME_START = (40, 170)
+HOME_START = (1400, 340)
 HOME_Y_STEP = 90
 TARGET_SLOTS = [(488, 490), (1014, 632), (1049, 390), (998, 556), (816, 121)]
 TARGET_LINES = [((801, 306), (836, 156)), ((1032, 659), (928, 631)), ((1015, 583), (928, 529)), ((1066, 425), (994, 512)), ((543, 403), (507, 501))]
@@ -187,7 +188,7 @@ class AssemblyScene:
         title_font = pygame.font.SysFont("impact", 74, bold=False)
         sub_font = pygame.font.SysFont("arial narrow", 56, bold=True)
         screen.blit(title_font.render("NORDEN BOMB SIGHT", True, (236, 224, 201)), (header.x + 170, header.y + 28))
-        screen.blit(sub_font.render("TRAINING INTERFACE", True, accent_gold), (header.x + 360, header.y + 92))
+        screen.blit(sub_font.render("TRAINING INTERFACE", True, accent_gold), (header.x + 360, header.y + 104))
         if assets.burroughs_logo:
             b_logo = pygame.transform.smoothscale(assets.burroughs_logo, (85, 85))
             screen.blit(b_logo, (header.right - 270, header.y + 24))
@@ -216,7 +217,7 @@ class AssemblyScene:
         screen.blit(self.fonts["small"].render("• CALIBRATION", True, accent_gold), (left_panel.x + 28, left_panel.bottom - 128))
         if assets.crosshairs:
             ch = pygame.transform.smoothscale(assets.crosshairs, (132, 132))
-            screen.blit(ch, (left_panel.centerx - 66, left_panel.bottom - 122))
+            screen.blit(ch, (left_panel.centerx - 66, left_panel.bottom - 148))
 
         panel_rect = pygame.Rect(left_panel.right + 14, motto.bottom + 16, outer.width - 640, outer.height - 280)
         pygame.draw.rect(screen, (227, 212, 183), panel_rect, border_radius=12)
@@ -276,15 +277,6 @@ class AssemblyScene:
         for part in self.parts:
             self._draw_part(screen, part, transparent=(part is self.dragging and not part.locked))
 
-        footer = pygame.Rect(outer.x + 14, outer.bottom - 92, outer.width - 28, 76)
-        pygame.draw.rect(screen, (230, 216, 185), footer)
-        pygame.draw.rect(screen, (126, 108, 74), footer, 2)
-        if assets.classified:
-            stamp = pygame.transform.rotozoom(assets.classified, -10, 0.42)
-            screen.blit(stamp, (footer.centerx - 280, footer.y - 12))
-        screen.blit(meta_font.render("REMEMBER: ACCURACY SAVES LIVES", True, navy), (footer.centerx - 110, footer.y + 14))
-        screen.blit(self.fonts["small"].render("FOR TRAINING PURPOSES ONLY", True, (42, 40, 35)), (footer.right - 360, footer.y + 14))
-        screen.blit(self.fonts["small"].render("NOT TO BE TAKEN INTO COMBAT", True, (42, 40, 35)), (footer.right - 370, footer.y + 42))
 
     def _draw_part(self, screen: pygame.Surface, part: Part, transparent: bool = False) -> None:
         alpha = 180 if transparent else 255
@@ -576,7 +568,7 @@ class KioskApp:
     def __init__(self) -> None:
         pygame.init()
         pygame.display.set_caption(TITLE)
-        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        self.screen = pygame.display.set_mode(DESIGN_SIZE)
         self.clock = pygame.time.Clock()
 
         self.fonts = {
