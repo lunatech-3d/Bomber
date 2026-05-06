@@ -90,7 +90,7 @@ class AssemblyScene:
         sx, sy = HOME_START
         part_width, part_height = PART_SIZE
 
-        self.start_button = pygame.Rect(980, 650, 250, 48)
+        self.start_button = pygame.Rect(980, 714, 250, 48)
         self.show_start_button = False
         self.current_definition = "Place a label on the correct slot to see its definition."
         for i, (name, color, definition) in enumerate(PART_DEFS):
@@ -238,7 +238,7 @@ class AssemblyScene:
         screen.blit(surf, part.rect.topleft)
 
     def _draw_definition_box(self, screen: pygame.Surface) -> None:
-        rect = pygame.Rect(40, 645, 920, 64)
+        rect = pygame.Rect(40, 640, 920, 64)
         pygame.draw.rect(screen, (246, 241, 226), rect, border_radius=10)
         pygame.draw.rect(screen, (95, 87, 71), rect, 2, border_radius=10)
         label = self.fonts["small"].render(self.current_definition, True, (30, 30, 30))
@@ -258,11 +258,13 @@ class BombRunScene:
     def reset(self) -> None:
         # Environmental errors to correct.
         self.wind_push = random.uniform(-1.2, 1.2)
-        self.forward_speed = random.uniform(1.4, 1.9)
+        self.forward_speed = random.uniform(0.70, 0.95)
 
-        # User adjustments (heading and drift knobs).
+        # User adjustments (heading and speed controls).
         self.heading_correction = 0.0
-        self.drift_correction = 0.0
+        self.speed_adjust = 0.0
+        self.min_speed = 0.25
+        self.max_speed = 2.2
 
         self.run_time = 0.0
         self.max_run_time = 60.0
@@ -276,7 +278,7 @@ class BombRunScene:
         self.rating = ""
 
     def _new_target(self) -> dict[str, float]:
-        return {"x": random.uniform(-160, 160), "y": random.uniform(180, 420)}
+        return {"x": random.uniform(-160, 160), "y": random.uniform(220, 560)}
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.KEYDOWN and not self.result_ready:
@@ -285,9 +287,9 @@ class BombRunScene:
             elif event.key == pygame.K_RIGHT:
                 self.heading_correction += 0.16
             elif event.key == pygame.K_UP:
-                self.drift_correction += 0.16
+                self.speed_adjust += 0.10
             elif event.key == pygame.K_DOWN:
-                self.drift_correction -= 0.16
+                self.speed_adjust -= 0.10
             elif event.key == pygame.K_SPACE:
                 self._release_bomb()
         return self.result_ready
@@ -298,7 +300,7 @@ class BombRunScene:
         for i, target in enumerate(self.targets):
             timing_error = abs(target["y"] - self.ideal_release_y)
             lateral_error = abs(target["x"])
-            control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.forward_speed - self.drift_correction) * 55
+            control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.current_speed() - 1.15) * 55
             distance = math.hypot(lateral_error * 0.9 + control_error * 0.25, timing_error * 0.95)
             if closest is None or distance < closest[1]:
                 closest = (i, distance)
@@ -310,26 +312,38 @@ class BombRunScene:
         if self.impact_distance <= 42:
             self.rating = "Direct Hit"
             self.successful_hits += 1
+            # Remove hit target from view immediately; recycle below the viewport.
+            self.targets[index] = {"x": random.uniform(-160, 160), "y": random.uniform(620, 820)}
         elif self.impact_distance <= 130:
             self.rating = "Near Miss"
         else:
             self.rating = "Miss"
-        self.targets[index] = self._new_target()
 
     def update(self, dt: float) -> None:
         if self.result_ready:
             return
 
         self.run_time = min(self.max_run_time, self.run_time + dt)
+        speed = self.current_speed()
+
+        if speed <= self.min_speed:
+            self.rating = "Stalled Aircraft"
+            self.result_ready = True
+            return
+
         for target in self.targets:
             target["x"] += (self.wind_push - self.heading_correction) * 55 * dt
-            target["y"] -= (self.forward_speed - self.drift_correction) * 95 * dt
-            if target["y"] < -80:
+            target["y"] -= speed * 62 * dt
+            radial_distance = math.hypot(target["x"], target["y"])
+            if radial_distance > self.viewport_radius + 36 and target["y"] < 0:
                 target.update(self._new_target())
-                target["y"] = random.uniform(320, 460)
-            target["x"] = max(-240, min(240, target["x"]))
+                target["y"] = random.uniform(420, 620)
+            target["x"] = max(-260, min(260, target["x"]))
         if self.run_time >= self.max_run_time:
             self.result_ready = True
+
+    def current_speed(self) -> float:
+        return max(self.min_speed, min(self.max_speed, self.forward_speed + self.speed_adjust))
 
     def snapshot(self) -> dict[str, float | str]:
         return {
@@ -337,6 +351,7 @@ class BombRunScene:
             "rating": self.rating,
             "drops": str(self.total_drops),
             "hits": str(self.successful_hits),
+            "speed": f"{self.current_speed():.2f}",
         }
 
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
@@ -383,30 +398,38 @@ class BombRunScene:
 
         if assets.map_bg:
             scaled = pygame.transform.smoothscale(assets.map_bg, (r * 2, r * 2))
-            scroll = int((self.run_time * 48) % (r * 2))
+            scroll = int((self.run_time * self.current_speed() * 30) % (r * 2))
             screen.blit(scaled, (cx - r, cy - r + scroll - r * 2))
             screen.blit(scaled, (cx - r, cy - r + scroll))
             return
 
-        base_y = cy - r + int((self.run_time * 48) % 90)
+        base_y = cy - r + int((self.run_time * self.current_speed() * 30) % 90)
         for i in range(-2, 12):
             y = base_y + i * 90
             pygame.draw.rect(screen, (42, 62, 42), (cx - r, y, r * 2, 46))
             pygame.draw.rect(screen, (33, 51, 33), (cx - r, y + 46, r * 2, 44))
 
     def _draw_hud(self, screen: pygame.Surface) -> None:
-        left = self.fonts["small"].render("LEFT/RIGHT: Heading   UP/DOWN: Drift   SPACE: Release", True, (224, 224, 224))
+        left = self.fonts["small"].render("LEFT/RIGHT: Heading   UP: Faster   DOWN: Slower   SPACE: Release", True, (224, 224, 224))
         screen.blit(left, (40, 24))
 
         seconds_left = max(0, int(self.max_run_time - self.run_time))
-        steady = abs(self.wind_push - self.heading_correction) < 0.18 and abs(self.forward_speed - self.drift_correction) < 0.18
+        steady = abs(self.wind_push - self.heading_correction) < 0.18 and self.current_speed() > 0.5
         steady_color = (130, 240, 130) if steady else (230, 180, 90)
 
         screen.blit(self.fonts["body"].render(f"Run Clock: {seconds_left}s", True, (230, 230, 230)), (40, 62))
         screen.blit(self.fonts["body"].render(f"Drops: {self.total_drops}  Hits: {self.successful_hits}", True, (230, 230, 230)), (40, 222))
         screen.blit(self.fonts["body"].render(f"Heading Corr: {self.heading_correction:+.2f}", True, (190, 220, 255)), (40, 104))
-        screen.blit(self.fonts["body"].render(f"Drift Corr: {self.drift_correction:+.2f}", True, (190, 220, 255)), (40, 142))
+        screen.blit(self.fonts["body"].render(f"Terrain Speed: {self.current_speed():.2f}", True, (190, 220, 255)), (40, 142))
         screen.blit(self.fonts["body"].render("Steady" if steady else "Adjusting", True, steady_color), (40, 182))
+        gauge_rect = pygame.Rect(40, 258, 260, 20)
+        pygame.draw.rect(screen, (70, 70, 70), gauge_rect, border_radius=6)
+        fill = max(0.0, min(1.0, (self.current_speed() - self.min_speed) / (self.max_speed - self.min_speed)))
+        fill_rect = gauge_rect.copy()
+        fill_rect.width = max(4, int(gauge_rect.width * fill))
+        color = (90, 210, 120) if self.current_speed() > self.min_speed + 0.2 else (220, 120, 70)
+        pygame.draw.rect(screen, color, fill_rect, border_radius=6)
+        screen.blit(self.fonts["small"].render("Speed Gauge", True, (230, 230, 230)), (40, 282))
 
 
 class DebriefScene:

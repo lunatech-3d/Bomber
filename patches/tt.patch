@@ -1,0 +1,319 @@
+
+[Adiff --git a/bombsite_kiosk.py b/bombsite_kiosk.py
+index cfce96b3efdaf8478d2d4bae86883886ff0c90d5..8e768b40fb3f82f26063ad71ec84bbba5da01415 100644
+--- a/bombsite_kiosk.py
++++ b/bombsite_kiosk.py
+@@ -68,51 +68,51 @@ class AssetBank:
+         if path.exists():
+             return pygame.image.load(path.as_posix()).convert_alpha()
+         return None
+ 
+     def _load_absolute(self, path: Path) -> pygame.Surface | None:
+         if path.exists():
+             return pygame.image.load(path.as_posix()).convert()
+         return None
+ 
+ 
+ class AssemblyScene:
+     """Existing drag-and-drop assembly scene (unchanged gameplay)."""
+ 
+     def __init__(self, screen_rect: pygame.Rect, fonts: dict[str, pygame.font.Font]) -> None:
+         self.screen_rect = screen_rect
+         self.fonts = fonts
+         self.dragging: Part | None = None
+         self.drag_offset = (0, 0)
+         self.parts = self._build_parts()
+ 
+     def _build_parts(self) -> list[Part]:
+         parts = []
+         sx, sy = HOME_START
+         part_width, part_height = PART_SIZE
+ 
+-        self.start_button = pygame.Rect(980, 650, 250, 48)
++        self.start_button = pygame.Rect(980, 714, 250, 48)
+         self.show_start_button = False
+         self.current_definition = "Place a label on the correct slot to see its definition."
+         for i, (name, color, definition) in enumerate(PART_DEFS):
+             r = pygame.Rect(sx, sy + i * HOME_Y_STEP, part_width, part_height)
+             target_x, target_y = TARGET_SLOTS[i]
+             t = pygame.Rect(target_x, target_y, part_width, part_height)
+             parts.append(Part(name=name, color=color, rect=r.copy(), target=t, home=r.topleft, definition=definition))
+ 
+         return parts
+ 
+     def handle_event(self, event: pygame.event.Event) -> None:
+         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+             for part in reversed(self.parts):
+                 if not part.locked and part.rect.collidepoint(event.pos):
+                     self.dragging = part
+                     part.returning = False
+                     part.return_pos = (float(part.rect.x), float(part.rect.y))
+                     self.drag_offset = (part.rect.x - event.pos[0], part.rect.y - event.pos[1])
+                     break
+ 
+         elif event.type == pygame.MOUSEMOTION and self.dragging:
+             self.dragging.rect.x = event.pos[0] + self.drag_offset[0]
+             self.dragging.rect.y = event.pos[1] + self.drag_offset[1]
+ 
+         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.dragging:
+@@ -216,219 +216,242 @@ class AssemblyScene:
+             pygame.draw.rect(screen, (230, 230, 230), self.start_button, 2, border_radius=8)
+             txt = self.fonts["small"].render("Start Bomb Run", True, (255, 255, 255))
+             screen.blit(txt, txt.get_rect(center=self.start_button.center))
+ 
+         mouse = pygame.mouse.get_pos()
+         for part in self.parts:
+             if part.locked and part.target.collidepoint(mouse):
+                 self.current_definition = part.definition
+ 
+         for part in self.parts:
+             self._draw_part(screen, part, transparent=(part is self.dragging and not part.locked))
+ 
+     def _draw_part(self, screen: pygame.Surface, part: Part, transparent: bool = False) -> None:
+         alpha = 180 if transparent else 255
+         surf = pygame.Surface(part.rect.size, pygame.SRCALPHA)
+ 
+         pygame.draw.rect(surf, (*PART_BG_COLOR, alpha), surf.get_rect(), border_radius=9)
+         pygame.draw.rect(surf, (*PART_BORDER_COLOR, alpha), surf.get_rect(), 2, border_radius=9)
+ 
+         label = self.fonts["small"].render(part.name, True, PART_TEXT_COLOR)
+         surf.blit(label, label.get_rect(center=surf.get_rect().center))
+ 
+         screen.blit(surf, part.rect.topleft)
+ 
+     def _draw_definition_box(self, screen: pygame.Surface) -> None:
+-        rect = pygame.Rect(40, 645, 920, 64)
++        rect = pygame.Rect(40, 640, 920, 64)
+         pygame.draw.rect(screen, (246, 241, 226), rect, border_radius=10)
+         pygame.draw.rect(screen, (95, 87, 71), rect, 2, border_radius=10)
+         label = self.fonts["small"].render(self.current_definition, True, (30, 30, 30))
+         screen.blit(label, (rect.x + 12, rect.y + 20))
+ 
+ 
+ class BombRunScene:
+     """Keyboard-driven bombsight simulation with drift correction and timed bomb release."""
+ 
+     def __init__(self, screen_rect: pygame.Rect, fonts: dict[str, pygame.font.Font]) -> None:
+         self.rect = screen_rect
+         self.fonts = fonts
+         self.viewport_radius = min(screen_rect.width, screen_rect.height) // 3
+         self.viewport_center = (screen_rect.centerx, screen_rect.centery + 20)
+         self.reset()
+ 
+     def reset(self) -> None:
+         # Environmental errors to correct.
+         self.wind_push = random.uniform(-1.2, 1.2)
+-        self.forward_speed = random.uniform(1.4, 1.9)
++        self.forward_speed = random.uniform(0.70, 0.95)
+ 
+-        # User adjustments (heading and drift knobs).
++        # User adjustments (heading and speed controls).
+         self.heading_correction = 0.0
+-        self.drift_correction = 0.0
++        self.speed_adjust = 0.0
++        self.min_speed = 0.25
++        self.max_speed = 2.2
+ 
+         self.run_time = 0.0
+         self.max_run_time = 60.0
+         self.ideal_release_y = -26.0
+ 
+         self.targets = [self._new_target() for _ in range(4)]
+         self.total_drops = 0
+         self.successful_hits = 0
+         self.result_ready = False
+         self.impact_distance = 0.0
+         self.rating = ""
+ 
+     def _new_target(self) -> dict[str, float]:
+-        return {"x": random.uniform(-160, 160), "y": random.uniform(180, 420)}
++        return {"x": random.uniform(-160, 160), "y": random.uniform(220, 560)}
+ 
+     def handle_event(self, event: pygame.event.Event) -> bool:
+         if event.type == pygame.KEYDOWN and not self.result_ready:
+             if event.key == pygame.K_LEFT:
+                 self.heading_correction -= 0.16
+             elif event.key == pygame.K_RIGHT:
+                 self.heading_correction += 0.16
+             elif event.key == pygame.K_UP:
+-                self.drift_correction += 0.16
++                self.speed_adjust += 0.10
+             elif event.key == pygame.K_DOWN:
+-                self.drift_correction -= 0.16
++                self.speed_adjust -= 0.10
+             elif event.key == pygame.K_SPACE:
+                 self._release_bomb()
+         return self.result_ready
+ 
+     def _release_bomb(self) -> None:
+         self.total_drops += 1
+         closest = None
+         for i, target in enumerate(self.targets):
+             timing_error = abs(target["y"] - self.ideal_release_y)
+             lateral_error = abs(target["x"])
+-            control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.forward_speed - self.drift_correction) * 55
++            control_error = abs(self.wind_push - self.heading_correction) * 65 + abs(self.current_speed() - 1.15) * 55
+             distance = math.hypot(lateral_error * 0.9 + control_error * 0.25, timing_error * 0.95)
+             if closest is None or distance < closest[1]:
+                 closest = (i, distance)
+ 
+         if closest is None:
+             return
+ 
+         index, self.impact_distance = closest
+         if self.impact_distance <= 42:
+             self.rating = "Direct Hit"
+             self.successful_hits += 1
++            # Remove hit target from view immediately; recycle below the viewport.
++            self.targets[index] = {"x": random.uniform(-160, 160), "y": random.uniform(620, 820)}
+         elif self.impact_distance <= 130:
+             self.rating = "Near Miss"
+         else:
+             self.rating = "Miss"
+-        self.targets[index] = self._new_target()
+ 
+     def update(self, dt: float) -> None:
+         if self.result_ready:
+             return
+ 
+         self.run_time = min(self.max_run_time, self.run_time + dt)
++        speed = self.current_speed()
++
++        if speed <= self.min_speed:
++            self.rating = "Stalled Aircraft"
++            self.result_ready = True
++            return
++
+         for target in self.targets:
+             target["x"] += (self.wind_push - self.heading_correction) * 55 * dt
+-            target["y"] -= (self.forward_speed - self.drift_correction) * 95 * dt
+-            if target["y"] < -80:
++            target["y"] -= speed * 62 * dt
++            radial_distance = math.hypot(target["x"], target["y"])
++            if radial_distance > self.viewport_radius + 36 and target["y"] < 0:
+                 target.update(self._new_target())
+-                target["y"] = random.uniform(320, 460)
+-            target["x"] = max(-240, min(240, target["x"]))
++                target["y"] = random.uniform(420, 620)
++            target["x"] = max(-260, min(260, target["x"]))
+         if self.run_time >= self.max_run_time:
+             self.result_ready = True
+ 
++    def current_speed(self) -> float:
++        return max(self.min_speed, min(self.max_speed, self.forward_speed + self.speed_adjust))
++
+     def snapshot(self) -> dict[str, float | str]:
+         return {
+             "impact_distance": self.impact_distance,
+             "rating": self.rating,
+             "drops": str(self.total_drops),
+             "hits": str(self.successful_hits),
++            "speed": f"{self.current_speed():.2f}",
+         }
+ 
+     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
+         screen.fill((11, 17, 25))
+         self._draw_viewport(screen, assets)
+         self._draw_hud(screen)
+ 
+         if self.rating:
+             text = self.fonts["title"].render(f"{self.rating}", True, (255, 223, 122))
+             screen.blit(text, text.get_rect(center=(self.rect.centerx, 80)))
+ 
+     def _draw_viewport(self, screen: pygame.Surface, assets: AssetBank) -> None:
+         cx, cy = self.viewport_center
+         r = self.viewport_radius
+ 
+         # Draw black mask around circular viewport.
+         pygame.draw.rect(screen, (5, 8, 12), self.rect)
+         pygame.draw.circle(screen, (28, 42, 28), self.viewport_center, r)
+ 
+         clip_previous = screen.get_clip()
+         screen.set_clip(pygame.Rect(cx - r, cy - r, r * 2, r * 2))
+ 
+         # Scrolling terrain/map effect.
+         self._draw_terrain(screen, assets)
+ 
+         # Draw target inside viewport coordinates.
+         for target in self.targets:
+             target_pos = (int(cx + target["x"]), int(cy + target["y"]))
+             pygame.draw.rect(screen, (150, 120, 80), (target_pos[0] - 20, target_pos[1] - 16, 40, 32), border_radius=4)
+             pygame.draw.polygon(screen, (180, 70, 70), [(target_pos[0], target_pos[1] - 26), (target_pos[0] - 16, target_pos[1] - 8), (target_pos[0] + 16, target_pos[1] - 8)])
+ 
+         # Restore clip and overlay viewport border.
+         screen.set_clip(clip_previous)
+         pygame.draw.circle(screen, (120, 128, 120), self.viewport_center, r, 6)
+ 
+         # Fixed bombsight crosshair at center.
+         pygame.draw.circle(screen, (230, 235, 230), self.viewport_center, 24, 2)
+         pygame.draw.line(screen, (230, 235, 230), (cx - 52, cy), (cx + 52, cy), 2)
+         pygame.draw.line(screen, (230, 235, 230), (cx, cy - 52), (cx, cy + 52), 2)
+ 
+     def _draw_terrain(self, screen: pygame.Surface, assets: AssetBank) -> None:
+         cx, cy = self.viewport_center
+         r = self.viewport_radius
+ 
+         if assets.map_bg:
+             scaled = pygame.transform.smoothscale(assets.map_bg, (r * 2, r * 2))
+-            scroll = int((self.run_time * 48) % (r * 2))
++            scroll = int((self.run_time * self.current_speed() * 30) % (r * 2))
+             screen.blit(scaled, (cx - r, cy - r + scroll - r * 2))
+             screen.blit(scaled, (cx - r, cy - r + scroll))
+             return
+ 
+-        base_y = cy - r + int((self.run_time * 48) % 90)
++        base_y = cy - r + int((self.run_time * self.current_speed() * 30) % 90)
+         for i in range(-2, 12):
+             y = base_y + i * 90
+             pygame.draw.rect(screen, (42, 62, 42), (cx - r, y, r * 2, 46))
+             pygame.draw.rect(screen, (33, 51, 33), (cx - r, y + 46, r * 2, 44))
+ 
+     def _draw_hud(self, screen: pygame.Surface) -> None:
+-        left = self.fonts["small"].render("LEFT/RIGHT: Heading   UP/DOWN: Drift   SPACE: Release", True, (224, 224, 224))
++        left = self.fonts["small"].render("LEFT/RIGHT: Heading   UP: Faster   DOWN: Slower   SPACE: Release", True, (224, 224, 224))
+         screen.blit(left, (40, 24))
+ 
+         seconds_left = max(0, int(self.max_run_time - self.run_time))
+-        steady = abs(self.wind_push - self.heading_correction) < 0.18 and abs(self.forward_speed - self.drift_correction) < 0.18
++        steady = abs(self.wind_push - self.heading_correction) < 0.18 and self.current_speed() > 0.5
+         steady_color = (130, 240, 130) if steady else (230, 180, 90)
+ 
+         screen.blit(self.fonts["body"].render(f"Run Clock: {seconds_left}s", True, (230, 230, 230)), (40, 62))
+         screen.blit(self.fonts["body"].render(f"Drops: {self.total_drops}  Hits: {self.successful_hits}", True, (230, 230, 230)), (40, 222))
+         screen.blit(self.fonts["body"].render(f"Heading Corr: {self.heading_correction:+.2f}", True, (190, 220, 255)), (40, 104))
+-        screen.blit(self.fonts["body"].render(f"Drift Corr: {self.drift_correction:+.2f}", True, (190, 220, 255)), (40, 142))
++        screen.blit(self.fonts["body"].render(f"Terrain Speed: {self.current_speed():.2f}", True, (190, 220, 255)), (40, 142))
+         screen.blit(self.fonts["body"].render("Steady" if steady else "Adjusting", True, steady_color), (40, 182))
++        gauge_rect = pygame.Rect(40, 258, 260, 20)
++        pygame.draw.rect(screen, (70, 70, 70), gauge_rect, border_radius=6)
++        fill = max(0.0, min(1.0, (self.current_speed() - self.min_speed) / (self.max_speed - self.min_speed)))
++        fill_rect = gauge_rect.copy()
++        fill_rect.width = max(4, int(gauge_rect.width * fill))
++        color = (90, 210, 120) if self.current_speed() > self.min_speed + 0.2 else (220, 120, 70)
++        pygame.draw.rect(screen, color, fill_rect, border_radius=6)
++        screen.blit(self.fonts["small"].render("Speed Gauge", True, (230, 230, 230)), (40, 282))
+ 
+ 
+ class DebriefScene:
+     def __init__(self, screen_rect: pygame.Rect, fonts: dict[str, pygame.font.Font]) -> None:
+         self.rect = screen_rect
+         self.fonts = fonts
+         self.impact_distance = 0.0
+         self.rating = ""
+         self.drops = 0
+         self.hits = 0
+ 
+     def set_result(self, result: dict[str, float | str]) -> None:
+         self.impact_distance = float(result["impact_distance"])
+         self.rating = str(result["rating"])
+         self.drops = int(result.get("drops", "0"))
+         self.hits = int(result.get("hits", "0"))
+ 
+     def handle_event(self, event: pygame.event.Event) -> bool:
+         if event.type == pygame.KEYDOWN and event.key in (pygame.K_SPACE, pygame.K_RETURN):
+             return True
+         return False
+ 
+     def draw(self, screen: pygame.Surface, _: AssetBank) -> None:
+         screen.fill((236, 228, 205))
+         screen.blit(self.fonts["title"].render("Bomb Run Debrief", True, (40, 40, 40)), (40, 40))
