@@ -26,7 +26,7 @@ PART_SIZE = (165, 46)
 PART_BG_COLOR = (255, 255, 255)
 PART_BORDER_COLOR = (255, 255, 255)
 PART_TEXT_COLOR = (30, 30, 30)
-BOMBSIGHT_IMAGE_SCALE_BOOST = 1.15
+BOMBSIGHT_IMAGE_SCALE_BOOST = 1.05
 USAAF_IMAGE = Path(r"c:\bomber\USAAF_Logo.png")
 BURROUGHSLOGO_IMAGE = Path(r"c:\bomber\Burroughs_Logo.png")
 CLASSIFIED_IMAGE = Path(r"c:\bomber\Classified.png")
@@ -49,10 +49,13 @@ def get_layout_geometry() -> dict[str, pygame.Rect]:
     outer = screen_rect.inflate(-30, -24)
     header = pygame.Rect(outer.x + 6, outer.y + 6, outer.width - 12, 150)
     motto = pygame.Rect(header.x, header.bottom + 4, header.width, 40)
-    left_panel = pygame.Rect(outer.x + 12, motto.bottom + 10, 280, outer.height - 270)
-    panel_rect = pygame.Rect(left_panel.right + 14, motto.bottom + 16, outer.width - 640, outer.height - 280)
-    image_zone = pygame.Rect(panel_rect.x + 24, panel_rect.y + 70, panel_rect.width - 48, panel_rect.height - 84)
-    label_panel = pygame.Rect(panel_rect.right + 16, panel_rect.y, 300, panel_rect.height)
+    left_panel = pygame.Rect(outer.x + 12, motto.bottom + 10, 360, outer.height - 270)
+    label_panel_width = 330
+    center_gap = 18
+    panel_width = outer.width - left_panel.width - label_panel_width - center_gap - 52
+    panel_rect = pygame.Rect(left_panel.right + 16, motto.bottom + 16, panel_width, outer.height - 280)
+    image_zone = pygame.Rect(panel_rect.x + 18, panel_rect.y + 70, panel_rect.width - 36, panel_rect.height - 160)
+    label_panel = pygame.Rect(panel_rect.right + center_gap, panel_rect.y, label_panel_width, panel_rect.height)
     return {
         "outer": outer,
         "header": header,
@@ -235,10 +238,11 @@ class AssemblyScene:
             sw = pygame.transform.smoothscale(assets.star_wings, (128, 128))
             screen.blit(sw, (left_panel.centerx - 64, left_panel.y + 24))
         side_font = pygame.font.SysFont("arial narrow", 42, bold=True)
-        screen.blit(side_font.render("BOMB SIGHT TRAINING", True, (223, 207, 176)), (left_panel.x + 18, left_panel.y + 168))
-        screen.blit(self.fonts["body"].render("SECTION 1 OF 3", True, accent_gold), (left_panel.x + 50, left_panel.y + 214))
-        screen.blit(side_font.render("LABEL", True, (223, 207, 176)), (left_panel.x + 80, left_panel.y + 270))
-        screen.blit(side_font.render("IDENTIFICATION", True, (223, 207, 176)), (left_panel.x + 28, left_panel.y + 316))
+        screen.blit(side_font.render("BOMB SIGHT", True, (223, 207, 176)), (left_panel.x + 62, left_panel.y + 168))
+        screen.blit(side_font.render("TRAINING", True, (223, 207, 176)), (left_panel.x + 88, left_panel.y + 210))
+        screen.blit(self.fonts["body"].render("SECTION 1 OF 3", True, accent_gold), (left_panel.x + 88, left_panel.y + 262))
+        screen.blit(side_font.render("LABEL", True, (223, 207, 176)), (left_panel.x + 132, left_panel.y + 318))
+        screen.blit(side_font.render("IDENTIFICATION", True, (223, 207, 176)), (left_panel.x + 80, left_panel.y + 364))
         screen.blit(self.fonts["small"].render("• MAINTENANCE", True, accent_gold), (left_panel.x + 28, left_panel.bottom - 160))
         screen.blit(self.fonts["small"].render("• CALIBRATION", True, accent_gold), (left_panel.x + 28, left_panel.bottom - 128))
         if assets.crosshairs:
@@ -260,7 +264,7 @@ class AssemblyScene:
             new_size = (int(img.get_width() * scale), int(img.get_height() * scale))
             scaled = pygame.transform.smoothscale(img, new_size)
 
-            img_rect = scaled.get_rect(center=image_zone.center)
+            img_rect = scaled.get_rect(center=(image_zone.centerx - 44, image_zone.centery))
             image_clip = image_zone
             previous_clip = screen.get_clip()
             screen.set_clip(image_clip)
@@ -317,11 +321,13 @@ class AssemblyScene:
         screen.blit(surf, part.rect.topleft)
 
     def _draw_definition_box(self, screen: pygame.Surface) -> None:
-        rect = pygame.Rect(40, 640, 920, 64)
+        layout = get_layout_geometry()
+        panel_rect = layout["panel_rect"]
+        rect = pygame.Rect(panel_rect.x + 12, panel_rect.bottom - 74, panel_rect.width - 24, 58)
         pygame.draw.rect(screen, (246, 241, 226), rect, border_radius=10)
         pygame.draw.rect(screen, (95, 87, 71), rect, 2, border_radius=10)
         label = self.fonts["small"].render(self.current_definition, True, (30, 30, 30))
-        screen.blit(label, (rect.x + 12, rect.y + 20))
+        screen.blit(label, (rect.x + 12, rect.y + 18))
 
 
 class BombRunScene:

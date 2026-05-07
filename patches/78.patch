@@ -1,0 +1,233 @@
+diff --git a/bombsite_kiosk.py b/bombsite_kiosk.py
+index 91b6ad89c73fe47d927358b1f20834bb6abaf84e..ffc0dc7560a296cd2fcf0ad99cb270b3196e6463 100644
+--- a/bombsite_kiosk.py
++++ b/bombsite_kiosk.py
+@@ -4,77 +4,80 @@ from dataclasses import dataclass
+ from pathlib import Path
+ import math
+ import random
+ import sys
+ import pygame
+ 
+ # ---------------------------- Configuration ---------------------------- #
+ TITLE = "Build the Bombsight"
+ FPS = 60
+ DESIGN_SIZE = (1920, 1080)
+ ASSET_DIR = Path(__file__).parent / "assets"
+ BOMBSIGHT_IMAGE = Path(r"c:\bomber\football.jpg")
+ 
+ PART_DEFS = [
+     ("Leveling Knob", (239, 196, 76), "Levels the bombsight so calculations stay accurate in flight."),
+     ("Turn & Drift Knob", (82, 190, 128), "Compensates for wind drift and aircraft turn effects."),
+     ("Rate & Displ.Knob", (93, 173, 226), "Adjusts target movement rate and displacement corrections."),
+     ("Disc Speed Drum", (236, 112, 99), "Sets bombing disc speed values used by the aiming mechanism."),
+     ("Eye Piece", (165, 105, 189), "Viewing lens used to align and track the target area."),
+ ]
+ 
+ PART_SIZE = (165, 46)
+ PART_BG_COLOR = (255, 255, 255)
+ PART_BORDER_COLOR = (255, 255, 255)
+ PART_TEXT_COLOR = (30, 30, 30)
+-BOMBSIGHT_IMAGE_SCALE_BOOST = 1.15
++BOMBSIGHT_IMAGE_SCALE_BOOST = 1.05
+ USAAF_IMAGE = Path(r"c:\bomber\USAAF_Logo.png")
+ BURROUGHSLOGO_IMAGE = Path(r"c:\bomber\Burroughs_Logo.png")
+ CLASSIFIED_IMAGE = Path(r"c:\bomber\Classified.png")
+ CROSSHAIRS_IMAGE = Path(r"c:\bomber\crosshairs.png")
+ STARWITHWINGS_IMAGE = Path(r"c:\bomber\starwithwings.png")
+ 
+ HOME_START = (1400, 340)
+ HOME_Y_STEP = 90
+ TARGET_SLOTS = [(477, 748), (1138, 921), (1207, 761), (1164, 850), (791, 344)]
+ TARGET_LINES = [((816, 435), (852, 374)), ((1149, 944), (1042, 958)), ((1192, 870), (1050, 830)), ((1227, 786), (1136, 809)), ((558, 643), (501, 766))]
+ 
+ 
+ RETURN_LERP_SPEED = 0.18
+ RETURN_SNAP_DISTANCE = 1.5
+ 
+ 
+ def get_layout_geometry() -> dict[str, pygame.Rect]:
+     """Single source of truth for assembly scene layout geometry."""
+     screen_rect = pygame.Rect((0, 0), DESIGN_SIZE)
+     outer = screen_rect.inflate(-30, -24)
+     header = pygame.Rect(outer.x + 6, outer.y + 6, outer.width - 12, 150)
+     motto = pygame.Rect(header.x, header.bottom + 4, header.width, 40)
+-    left_panel = pygame.Rect(outer.x + 12, motto.bottom + 10, 280, outer.height - 270)
+-    panel_rect = pygame.Rect(left_panel.right + 14, motto.bottom + 16, outer.width - 640, outer.height - 280)
+-    image_zone = pygame.Rect(panel_rect.x + 24, panel_rect.y + 70, panel_rect.width - 48, panel_rect.height - 84)
+-    label_panel = pygame.Rect(panel_rect.right + 16, panel_rect.y, 300, panel_rect.height)
++    left_panel = pygame.Rect(outer.x + 12, motto.bottom + 10, 360, outer.height - 270)
++    label_panel_width = 330
++    center_gap = 18
++    panel_width = outer.width - left_panel.width - label_panel_width - center_gap - 52
++    panel_rect = pygame.Rect(left_panel.right + 16, motto.bottom + 16, panel_width, outer.height - 280)
++    image_zone = pygame.Rect(panel_rect.x + 18, panel_rect.y + 70, panel_rect.width - 36, panel_rect.height - 160)
++    label_panel = pygame.Rect(panel_rect.right + center_gap, panel_rect.y, label_panel_width, panel_rect.height)
+     return {
+         "outer": outer,
+         "header": header,
+         "motto": motto,
+         "left_panel": left_panel,
+         "panel_rect": panel_rect,
+         "image_zone": image_zone,
+         "label_panel": label_panel,
+     }
+ 
+ 
+ @dataclass
+ class Part:
+     name: str
+     color: tuple[int, int, int]
+     rect: pygame.Rect
+     target: pygame.Rect
+     home: tuple[int, int]
+     definition: str
+     locked: bool = False
+     returning: bool = False
+     return_pos: tuple[float, float] | None = None
+ 
+     def reset(self) -> None:
+         self.rect.topleft = self.home
+@@ -213,76 +216,77 @@ class AssemblyScene:
+             screen.blit(logo, (header.x + 24, header.y + 26))
+         title_font = pygame.font.SysFont("impact", 74, bold=False)
+         sub_font = pygame.font.SysFont("arial narrow", 54, bold=True)
+         screen.blit(title_font.render("NORDEN BOMB SIGHT", True, (236, 224, 201)), (header.x + 170, header.y + 28))
+         screen.blit(sub_font.render("TRAINING INTERFACE", True, accent_gold), (header.x + 480, header.y + 112))
+         if assets.burroughs_logo:
+             b_logo = pygame.transform.smoothscale(assets.burroughs_logo, (85, 85))
+             screen.blit(b_logo, (header.right - 270, header.y + 24))
+         meta_font = pygame.font.SysFont("courier new", 24, bold=True)
+         screen.blit(meta_font.render("RESTRICTED", True, (205, 191, 158)), (header.right - 170, header.y + 26))
+         screen.blit(meta_font.render("M-SERIES", True, (205, 191, 158)), (header.right - 170, header.y + 58))
+         screen.blit(self.fonts["small"].render("Reproduction Dept.", True, (197, 181, 150)), (header.right - 170, header.y + 92))
+         screen.blit(self.fonts["small"].render("L.F. Sept. 1943", True, (197, 181, 150)), (header.right - 170, header.y + 118))
+ 
+         motto = layout["motto"]
+         pygame.draw.rect(screen, (227, 214, 186), motto)
+         screen.blit(meta_font.render("ACCURACY • DEPENDS • ON • TRAINING", True, navy), (motto.x + 340, motto.y + 6))
+ 
+         left_panel = layout["left_panel"]
+         pygame.draw.rect(screen, navy, left_panel, border_radius=10)
+         pygame.draw.rect(screen, (123, 105, 75), left_panel, 2, border_radius=10)
+         if assets.star_wings:
+             sw = pygame.transform.smoothscale(assets.star_wings, (128, 128))
+             screen.blit(sw, (left_panel.centerx - 64, left_panel.y + 24))
+         side_font = pygame.font.SysFont("arial narrow", 42, bold=True)
+-        screen.blit(side_font.render("BOMB SIGHT TRAINING", True, (223, 207, 176)), (left_panel.x + 18, left_panel.y + 168))
+-        screen.blit(self.fonts["body"].render("SECTION 1 OF 3", True, accent_gold), (left_panel.x + 50, left_panel.y + 214))
+-        screen.blit(side_font.render("LABEL", True, (223, 207, 176)), (left_panel.x + 80, left_panel.y + 270))
+-        screen.blit(side_font.render("IDENTIFICATION", True, (223, 207, 176)), (left_panel.x + 28, left_panel.y + 316))
++        screen.blit(side_font.render("BOMB SIGHT", True, (223, 207, 176)), (left_panel.x + 62, left_panel.y + 168))
++        screen.blit(side_font.render("TRAINING", True, (223, 207, 176)), (left_panel.x + 88, left_panel.y + 210))
++        screen.blit(self.fonts["body"].render("SECTION 1 OF 3", True, accent_gold), (left_panel.x + 88, left_panel.y + 262))
++        screen.blit(side_font.render("LABEL", True, (223, 207, 176)), (left_panel.x + 132, left_panel.y + 318))
++        screen.blit(side_font.render("IDENTIFICATION", True, (223, 207, 176)), (left_panel.x + 80, left_panel.y + 364))
+         screen.blit(self.fonts["small"].render("• MAINTENANCE", True, accent_gold), (left_panel.x + 28, left_panel.bottom - 160))
+         screen.blit(self.fonts["small"].render("• CALIBRATION", True, accent_gold), (left_panel.x + 28, left_panel.bottom - 128))
+         if assets.crosshairs:
+             ch = pygame.transform.smoothscale(assets.crosshairs, (132, 132))
+             screen.blit(ch, (left_panel.centerx - 66, left_panel.bottom - 148))
+ 
+         panel_rect = layout["panel_rect"]
+         pygame.draw.rect(screen, (227, 212, 183), panel_rect, border_radius=12)
+         pygame.draw.rect(screen, (86, 74, 57), panel_rect, 2, border_radius=12)
+         top_banner = pygame.Rect(panel_rect.x + 6, panel_rect.y + 6, panel_rect.width - 12, 56)
+         pygame.draw.rect(screen, dark_panel, top_banner, border_radius=6)
+         screen.blit(meta_font.render("DRAG EACH LABEL TO ITS CORRECT LOCATION", True, (225, 210, 176)), (top_banner.x + 64, top_banner.y + 14))
+ 
+         image_zone = layout["image_zone"]
+         if assets.bombsight_photo:
+             img = assets.bombsight_photo
+             scale = min(image_zone.width / img.get_width(), image_zone.height / img.get_height())
+             scale *= BOMBSIGHT_IMAGE_SCALE_BOOST
+             new_size = (int(img.get_width() * scale), int(img.get_height() * scale))
+             scaled = pygame.transform.smoothscale(img, new_size)
+ 
+-            img_rect = scaled.get_rect(center=image_zone.center)
++            img_rect = scaled.get_rect(center=(image_zone.centerx - 44, image_zone.centery))
+             image_clip = image_zone
+             previous_clip = screen.get_clip()
+             screen.set_clip(image_clip)
+             screen.blit(scaled, img_rect.topleft)
+             screen.set_clip(previous_clip)
+ 
+         elif assets.panel:
+             screen.blit(pygame.transform.smoothscale(assets.panel, panel_rect.size), panel_rect.topleft)
+ 
+         else:
+             pygame.draw.rect(screen, (186, 176, 155), panel_rect, border_radius=20)
+             pygame.draw.rect(screen, (95, 87, 71), panel_rect, 3, border_radius=20)
+ 
+         for i, part in enumerate(self.parts):
+             if i < len(TARGET_LINES):
+                 pygame.draw.line(screen, (174, 164, 144), TARGET_LINES[i][0], TARGET_LINES[i][1], 2)
+ 
+         self._draw_definition_box(screen)
+         if self.completed():
+             pygame.draw.rect(screen, (24, 63, 108), self.start_button, border_radius=8)
+             pygame.draw.rect(screen, (210, 196, 165), self.start_button, 2, border_radius=8)
+             txt = self.fonts["small"].render("Start Bomb Run", True, (255, 255, 255))
+             screen.blit(txt, txt.get_rect(center=self.start_button.center))
+ 
+         mouse = pygame.mouse.get_pos()
+@@ -295,55 +299,57 @@ class AssemblyScene:
+         pygame.draw.rect(screen, (126, 108, 74), label_panel, 2, border_radius=10)
+         screen.blit(meta_font.render("AVAILABLE LABELS", True, (225, 210, 176)), (label_panel.x + 44, label_panel.y + 14))
+         progress_text = self.fonts["small"].render(f"{sum(p.locked for p in self.parts)} OF {len(self.parts)} PLACED", True, (225, 210, 176))
+         screen.blit(progress_text, (label_panel.x + 72, label_panel.bottom - 82))
+         for i in range(len(self.parts)):
+             color = (197, 166, 105) if i < sum(p.locked for p in self.parts) else (120, 110, 91)
+             pygame.draw.circle(screen, color, (label_panel.x + 42 + i * 44, label_panel.bottom - 36), 12, 2)
+ 
+         for part in self.parts:
+             self._draw_part(screen, part, transparent=(part is self.dragging and not part.locked))
+ 
+ 
+     def _draw_part(self, screen: pygame.Surface, part: Part, transparent: bool = False) -> None:
+         alpha = 180 if transparent else 255
+         surf = pygame.Surface(part.rect.size, pygame.SRCALPHA)
+         pygame.draw.rect(surf, (194, 170, 122, alpha), surf.get_rect(), border_radius=4)
+         pygame.draw.rect(surf, (89, 75, 50, alpha), surf.get_rect(), 2, border_radius=4)
+         pygame.draw.circle(surf, (95, 82, 56, alpha), (10, surf.get_height() // 2), 3)
+         pygame.draw.circle(surf, (95, 82, 56, alpha), (surf.get_width() - 10, surf.get_height() // 2), 3)
+         label = self.fonts["small"].render(part.name.upper(), True, (36, 28, 18))
+         surf.blit(label, label.get_rect(center=surf.get_rect().center))
+ 
+         screen.blit(surf, part.rect.topleft)
+ 
+     def _draw_definition_box(self, screen: pygame.Surface) -> None:
+-        rect = pygame.Rect(40, 640, 920, 64)
++        layout = get_layout_geometry()
++        panel_rect = layout["panel_rect"]
++        rect = pygame.Rect(panel_rect.x + 12, panel_rect.bottom - 74, panel_rect.width - 24, 58)
+         pygame.draw.rect(screen, (246, 241, 226), rect, border_radius=10)
+         pygame.draw.rect(screen, (95, 87, 71), rect, 2, border_radius=10)
+         label = self.fonts["small"].render(self.current_definition, True, (30, 30, 30))
+-        screen.blit(label, (rect.x + 12, rect.y + 20))
++        screen.blit(label, (rect.x + 12, rect.y + 18))
+ 
+ 
+ class BombRunScene:
+     """Keyboard-driven bombsight simulation with drift correction and timed bomb release."""
+ 
+     def __init__(self, screen_rect: pygame.Rect, fonts: dict[str, pygame.font.Font]) -> None:
+         self.rect = screen_rect
+         self.fonts = fonts
+         self.viewport_radius = min(screen_rect.width, screen_rect.height) // 3
+         self.viewport_center = (screen_rect.centerx, screen_rect.centery + 20)
+         self.reset()
+ 
+     def reset(self) -> None:
+         # Environmental errors to correct.
+         self.wind_push = random.uniform(-1.2, 1.2)
+         self.forward_speed = random.uniform(0.70, 0.95)
+ 
+         # User adjustments (heading and speed controls).
+         self.heading_correction = 0.0
+         self.speed_adjust = 0.0
+         self.min_speed = 0.25
+         self.max_speed = 2.2
+ 
+         self.run_time = 0.0
+         self.max_run_time = 60.0
