@@ -600,7 +600,7 @@ class KioskApp:
     def __init__(self) -> None:
         pygame.init()
         pygame.display.set_caption(TITLE)
-        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)        
+        self.screen = pygame.display.set_mode(DESIGN_SIZE, pygame.SCALED | pygame.FULLSCREEN)        
         self.clock = pygame.time.Clock()
 
         self.fonts = {
