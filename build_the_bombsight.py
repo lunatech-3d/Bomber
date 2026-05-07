@@ -45,6 +45,17 @@ class Part:
         self.locked = False
 
 
+@dataclass
+class AssemblyLayout:
+    header_title: tuple[int, int]
+    header_subtitle: tuple[int, int]
+    instruction: tuple[int, int]
+    panel_rect: pygame.Rect
+    tray_rect: pygame.Rect
+    slot_rects: list[pygame.Rect]
+    home_rects: list[pygame.Rect]
+
+
 class AssetBank:
     """Optional image hooks; app falls back to simple shapes if files don't exist."""
 
@@ -65,16 +76,77 @@ class AssemblyScene:
         self.fonts = fonts
         self.dragging: Part | None = None
         self.drag_offset = (0, 0)
-        self.parts = self._build_parts()
+        self.layout = self._compute_layout()
+        self.parts = self._build_parts(self.layout)
 
-    def _build_parts(self) -> list[Part]:
+    def _compute_layout(self) -> AssemblyLayout:
+        margin = max(24, int(self.screen_rect.width * 0.03))
+        header_top = max(24, int(self.screen_rect.height * 0.04))
+        footer_pad = max(22, int(self.screen_rect.height * 0.04))
+
+        tray_w = int(self.screen_rect.width * 0.28)
+        tray_h = self.screen_rect.height - (header_top + 120) - footer_pad
+        tray_rect = pygame.Rect(margin, header_top + 110, tray_w, tray_h)
+
+        panel_left = tray_rect.right + margin
+        panel_top = header_top + 100
+        panel_w = self.screen_rect.width - panel_left - margin
+        panel_h = self.screen_rect.height - panel_top - footer_pad - 20
+        panel_rect = pygame.Rect(panel_left, panel_top, panel_w, panel_h)
+
+        part_w = max(180, int(tray_rect.width * 0.72))
+        part_h = max(52, int(tray_rect.height * 0.11))
+        step = max(12, int((tray_rect.height - (part_h * len(PART_DEFS))) / (len(PART_DEFS) + 1)))
+        home_rects: list[pygame.Rect] = []
+        y = tray_rect.top + step
+        for _ in PART_DEFS:
+            x = tray_rect.left + (tray_rect.width - part_w) // 2
+            home_rects.append(pygame.Rect(x, y, part_w, part_h))
+            y += part_h + step
+
+        slot_w = max(180, int(panel_rect.width * 0.34))
+        slot_h = part_h
+        slot_gap_x = max(18, int(panel_rect.width * 0.08))
+        slot_gap_y = max(18, int(panel_rect.height * 0.1))
+        slot_start_x = panel_rect.left + max(24, int(panel_rect.width * 0.08))
+        slot_start_y = panel_rect.top + max(30, int(panel_rect.height * 0.16))
+
+        slot_rects: list[pygame.Rect] = []
+        for i in range(len(PART_DEFS)):
+            col = i % 2
+            row = i // 2
+            x = slot_start_x + col * (slot_w + slot_gap_x)
+            y = slot_start_y + row * (slot_h + slot_gap_y)
+            slot_rects.append(pygame.Rect(x, y, slot_w, slot_h))
+
+        return AssemblyLayout(
+            header_title=(margin, header_top),
+            header_subtitle=(margin + 2, header_top + 60),
+            instruction=(margin, self.screen_rect.bottom - footer_pad - 16),
+            panel_rect=panel_rect,
+            tray_rect=tray_rect,
+            slot_rects=slot_rects,
+            home_rects=home_rects,
+        )
+
+    def _build_parts(self, layout: AssemblyLayout) -> list[Part]:
         parts = []
-        sx, sy = 40, 170
         for i, (name, color) in enumerate(PART_DEFS):
-            r = pygame.Rect(sx, sy + i * 90, 220, 62)
-            t = pygame.Rect(520 + (i % 2) * 260, 190 + (i // 2) * 130, 220, 62)
+            r = layout.home_rects[i].copy()
+            t = layout.slot_rects[i].copy()
             parts.append(Part(name=name, color=color, rect=r.copy(), target=t, home=r.topleft))
         return parts
+
+    def _sync_part_layout(self, layout: AssemblyLayout) -> None:
+        for i, part in enumerate(self.parts):
+            part.target = layout.slot_rects[i].copy()
+            old_home = part.home
+            part.home = layout.home_rects[i].topleft
+            if part.locked:
+                part.rect.topleft = part.target.topleft
+            elif part is not self.dragging:
+                if part.rect.topleft == old_home:
+                    part.rect.topleft = part.home
 
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -101,22 +173,26 @@ class AssemblyScene:
         return all(p.locked for p in self.parts)
 
     def draw(self, screen: pygame.Surface, assets: AssetBank) -> None:
+        self.layout = self._compute_layout()
+        self._sync_part_layout(self.layout)
         screen.fill((224, 219, 205))
-        screen.blit(self.fonts["title"].render(TITLE, True, (30, 30, 30)), (40, 30))
+        screen.blit(self.fonts["title"].render(TITLE, True, (30, 30, 30)), self.layout.header_title)
         screen.blit(
             self.fonts["small"].render(
                 "Norden-style training rig • Burroughs Corporation, Plymouth, Michigan", True, (55, 55, 55)
             ),
-            (42, 94),
+            self.layout.header_subtitle,
         )
-        screen.blit(self.fonts["body"].render("Drag each part to its matching location.", True, (42, 42, 42)), (40, 660))
+        instruction = self.fonts["body"].render("Drag each part to its matching location.", True, (42, 42, 42))
+        screen.blit(instruction, (self.layout.instruction[0], self.layout.instruction[1] - instruction.get_height()))
 
-        panel_rect = pygame.Rect(470, 130, 760, 520)
         if assets.panel:
-            screen.blit(pygame.transform.smoothscale(assets.panel, panel_rect.size), panel_rect.topleft)
+            screen.blit(pygame.transform.smoothscale(assets.panel, self.layout.panel_rect.size), self.layout.panel_rect.topleft)
         else:
-            pygame.draw.rect(screen, (186, 176, 155), panel_rect, border_radius=20)
-            pygame.draw.rect(screen, (95, 87, 71), panel_rect, 3, border_radius=20)
+            pygame.draw.rect(screen, (209, 201, 183), self.layout.tray_rect, border_radius=16)
+            pygame.draw.rect(screen, (120, 110, 93), self.layout.tray_rect, 2, border_radius=16)
+            pygame.draw.rect(screen, (186, 176, 155), self.layout.panel_rect, border_radius=20)
+            pygame.draw.rect(screen, (95, 87, 71), self.layout.panel_rect, 3, border_radius=20)
 
         for part in self.parts:
             pygame.draw.rect(screen, (110, 110, 110), part.target, 2, border_radius=10)
